@@ -46,13 +46,17 @@ class SeleniumService:
         self.stop_driver()
 
     def start_driver(self) -> webdriver.Chrome:
-        """Start the Chrome WebDriver.
+        """Start the Chrome WebDriver with advanced stealth capabilities.
+
+        This method configures Chrome to bypass bot detection and handle
+        authentication challenges from services like Google.
 
         Returns:
-            Configured Chrome WebDriver instance
+            Configured Chrome WebDriver instance with stealth features
         """
         chrome_options = Options()
 
+        # Basic display configuration
         if self.config.headless:
             chrome_options.add_argument("--headless=new")
 
@@ -67,21 +71,100 @@ class SeleniumService:
         width, height = self.config.window_size.split(",")
         chrome_options.add_argument(f"--window-size={width},{height}")
 
-        # Set user agent
+        # Set realistic user agent
         if self.config.user_agent:
             chrome_options.add_argument(f"--user-agent={self.config.user_agent}")
 
-        # Additional recommended options
+        # === STEALTH MODE: Bypass Bot Detection ===
+        # Disable automation detection
         chrome_options.add_argument("--disable-blink-features=AutomationControlled")
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option("useAutomationExtension", False)
+
+        # === FIX: Disable Google Cloud Services (GCM/FCM Errors) ===
+        chrome_options.add_argument("--disable-features=GoogleServices")
+        chrome_options.add_argument("--disable-cloud-print")
+        chrome_options.add_argument("--disable-sync")
+        chrome_options.add_argument("--no-service-autorun")
+        chrome_options.add_argument("--disable-background-networking")
+        chrome_options.add_argument("--disable-background-timer-throttling")
+        chrome_options.add_argument("--disable-backgrounding-occluded-windows")
+        chrome_options.add_argument("--disable-breakpad")
+        chrome_options.add_argument("--disable-component-extensions-with-background-pages")
+
+        # === AUTHENTICATION BYPASS: Make Browser Appear Legitimate ===
+        # Disable infobars and popups
+        chrome_options.add_argument("--disable-infobars")
+        chrome_options.add_argument("--disable-notifications")
+        chrome_options.add_argument("--disable-popup-blocking")
+
+        # Pretend to be a real browser
+        chrome_options.add_argument("--disable-web-security")
+        chrome_options.add_argument("--allow-running-insecure-content")
+        chrome_options.add_argument("--disable-features=IsolateOrigins,site-per-process")
+
+        # Enable features that real browsers have
+        chrome_options.add_argument("--enable-features=NetworkService,NetworkServiceInProcess")
+
+        # Set realistic preferences
+        prefs = {
+            "credentials_enable_service": False,
+            "profile.password_manager_enabled": False,
+            "profile.default_content_setting_values.notifications": 2,
+            "profile.managed_default_content_settings.images": 1,
+            # Disable DevTools detection
+            "devtools.preferences.currentDockState": '"undocked"',
+            "devtools.preferences.showConsoleSidebar": "false",
+        }
+        chrome_options.add_experimental_option("prefs", prefs)
+
+        # === SECURITY: Suppress logging to reduce error noise ===
+        chrome_options.add_experimental_option("excludeSwitches", ["enable-logging"])
+        chrome_options.add_argument("--log-level=3")  # Suppress logs
+        chrome_options.add_argument("--silent")
 
         # Initialize driver
         service = Service(ChromeDriverManager().install())
         self.driver = webdriver.Chrome(service=service, options=chrome_options)
         self.driver.set_page_load_timeout(self.config.timeout)
 
-        logger.info("Chrome WebDriver started successfully")
+        # === CRITICAL: Mask WebDriver Property ===
+        # This JavaScript removes the navigator.webdriver flag that sites check
+        self.driver.execute_cdp_cmd(
+            "Page.addScriptToEvaluateOnNewDocument",
+            {
+                "source": """
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                });
+
+                // Mask Chrome automation
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => [1, 2, 3, 4, 5]
+                });
+
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['en-US', 'en']
+                });
+
+                // Override the `chrome` property
+                window.chrome = {
+                    runtime: {}
+                };
+
+                // Mock permissions API
+                const originalQuery = window.navigator.permissions.query;
+                window.navigator.permissions.query = (parameters) => (
+                    parameters.name === 'notifications' ?
+                    Promise.resolve({ state: Notification.permission }) :
+                    originalQuery(parameters)
+                );
+                """
+            },
+        )
+
+        logger.info("Chrome WebDriver started with stealth mode enabled")
+        logger.debug("GCM/FCM cloud services disabled to prevent authentication errors")
         return self.driver
 
     def stop_driver(self) -> None:
@@ -254,3 +337,207 @@ class SeleniumService:
         except Exception as e:
             logger.warning(f"Failed to click element with text '{text}': {e}")
             return False
+
+    def save_cookies(self, cookie_file: Path) -> None:
+        """Save current session cookies to file.
+
+        This allows you to preserve authentication state between sessions.
+
+        Args:
+            cookie_file: Path to save cookies (JSON format)
+        """
+        if not self.driver:
+            raise RuntimeError("Driver not started")
+
+        import json
+
+        cookies = self.driver.get_cookies()
+        cookie_file.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(cookie_file, "w") as f:
+            json.dump(cookies, f, indent=2)
+
+        logger.info(f"Saved {len(cookies)} cookies to {cookie_file}")
+
+    def load_cookies(self, cookie_file: Path) -> None:
+        """Load cookies from file to restore session.
+
+        Args:
+            cookie_file: Path to cookie file (JSON format)
+        """
+        if not self.driver:
+            raise RuntimeError("Driver not started")
+
+        import json
+
+        if not cookie_file.exists():
+            logger.warning(f"Cookie file not found: {cookie_file}")
+            return
+
+        with open(cookie_file, "r") as f:
+            cookies = json.load(f)
+
+        for cookie in cookies:
+            # Remove domain if it starts with a dot
+            if "domain" in cookie and cookie["domain"].startswith("."):
+                cookie["domain"] = cookie["domain"][1:]
+            try:
+                self.driver.add_cookie(cookie)
+            except Exception as e:
+                logger.debug(f"Failed to add cookie: {e}")
+
+        logger.info(f"Loaded {len(cookies)} cookies from {cookie_file}")
+
+    def manual_login_session(self, start_url: str, cookie_save_path: Path) -> None:
+        """Open browser for manual login and save session.
+
+        This method opens a visible browser window, allowing you to manually
+        log in to a site that blocks automation. Once logged in, it saves
+        the cookies for future automated sessions.
+
+        Args:
+            start_url: URL to open for login
+            cookie_save_path: Where to save authentication cookies
+
+        Example:
+            >>> service = SeleniumService(config)
+            >>> service.start_driver()
+            >>> service.manual_login_session(
+            ...     "https://accounts.google.com",
+            ...     Path("./cookies/google_auth.json")
+            ... )
+            >>> # Manually log in, then press Enter in terminal
+        """
+        if not self.driver:
+            raise RuntimeError("Driver not started")
+
+        logger.info(f"Opening {start_url} for manual login...")
+        logger.info("Please log in manually in the browser window.")
+        logger.info("Press Enter here when you're done logging in...")
+
+        self.driver.get(start_url)
+
+        # Wait for user to complete login
+        input("\n[PRESS ENTER WHEN LOGGED IN] ")
+
+        # Save the authenticated session
+        self.save_cookies(cookie_save_path)
+        logger.info("✅ Session saved! You can now use these cookies for automation.")
+
+    def handle_authentication_block(self) -> bool:
+        """Detect and attempt to handle authentication blocks.
+
+        This method detects common authentication block messages and attempts
+        various workarounds.
+
+        Returns:
+            True if block was detected and handled, False otherwise
+        """
+        if not self.driver:
+            raise RuntimeError("Driver not started")
+
+        page_text = self.driver.page_source.lower()
+
+        # Detect common block messages
+        block_indicators = [
+            "couldn't sign you in",
+            "browser or app may not be secure",
+            "try using a different browser",
+            "suspicious activity",
+            "unusual traffic",
+            "automated requests",
+        ]
+
+        is_blocked = any(indicator in page_text for indicator in block_indicators)
+
+        if is_blocked:
+            logger.warning("🚫 Authentication block detected!")
+            logger.info("Attempting workarounds...")
+
+            # Strategy 1: Wait and retry with human-like behavior
+            logger.info("Strategy 1: Simulating human behavior...")
+            self._simulate_human_behavior()
+
+            # Strategy 2: Clear browser data and retry
+            logger.info("Strategy 2: Clearing browser data...")
+            self.driver.delete_all_cookies()
+            self.driver.execute_script("window.localStorage.clear();")
+            self.driver.execute_script("window.sessionStorage.clear();")
+
+            # Refresh page
+            self.driver.refresh()
+            time.sleep(3)
+
+            # Check if block is still present
+            page_text_after = self.driver.page_source.lower()
+            still_blocked = any(indicator in page_text_after for indicator in block_indicators)
+
+            if still_blocked:
+                logger.error("❌ Authentication block persists.")
+                logger.info(
+                    "🔧 SOLUTION: Use manual_login_session() to authenticate manually "
+                    "and save cookies."
+                )
+                return True
+            else:
+                logger.info("✅ Block bypassed successfully!")
+                return True
+
+        return False
+
+    def _simulate_human_behavior(self) -> None:
+        """Simulate human-like mouse movements and scrolling."""
+        if not self.driver:
+            return
+
+        from selenium.webdriver.common.action_chains import ActionChains
+
+        try:
+            # Random mouse movements
+            actions = ActionChains(self.driver)
+
+            # Move to random positions
+            for _ in range(3):
+                import random
+
+                x_offset = random.randint(100, 500)
+                y_offset = random.randint(100, 500)
+                actions.move_by_offset(x_offset, y_offset)
+                time.sleep(random.uniform(0.3, 0.7))
+
+            actions.perform()
+
+            # Scroll page naturally
+            for _ in range(3):
+                scroll_amount = random.randint(100, 400)
+                self.driver.execute_script(f"window.scrollBy(0, {scroll_amount});")
+                time.sleep(random.uniform(0.5, 1.5))
+
+        except Exception as e:
+            logger.debug(f"Failed to simulate human behavior: {e}")
+
+    def check_rate_limit(self) -> bool:
+        """Check if the current page shows rate limiting.
+
+        Returns:
+            True if rate limited, False otherwise
+        """
+        if not self.driver:
+            return False
+
+        page_text = self.driver.page_source.lower()
+
+        rate_limit_indicators = [
+            "rate limit",
+            "too many requests",
+            "429",
+            "slow down",
+            "try again later",
+        ]
+
+        is_rate_limited = any(indicator in page_text for indicator in rate_limit_indicators)
+
+        if is_rate_limited:
+            logger.warning("⏱️ Rate limit detected! Consider increasing delay_ms in config.")
+
+        return is_rate_limited

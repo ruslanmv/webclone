@@ -52,6 +52,9 @@ dev = [
     "types-beautifulsoup4>=4.12.0",
     "bandit>=1.7.0",
 ]
+gui = [
+    "ttkbootstrap>=1.10.1",
+]
 
 [project.scripts]
 webmirror = "webmirror.cli:app"
