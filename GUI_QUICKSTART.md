@@ -1,9 +1,9 @@
-# 🚀 WebMirror Enterprise Desktop GUI - 2-Minute Quick Start
+# 🚀 WebClone Enterprise Desktop GUI - 2-Minute Quick Start
 
 ## Installation (One Time)
 
 ```bash
-# Install WebMirror with GUI
+# Install WebClone with GUI
 make install-gui
 ```
 
@@ -21,14 +21,14 @@ make gui
 ### Method 2: Double-Click Launcher
 
 **On Linux/Mac:**
-- Double-click `webmirror-gui.py`
+- Double-click `webclone-gui.py`
 
 **On Windows:**
-- Double-click `webmirror-gui.bat`
+- Double-click `webclone-gui.bat`
 
 ### Method 3: Python Command
 ```bash
-python webmirror-gui.py
+python webclone-gui.py
 ```
 
 ---
@@ -37,7 +37,7 @@ python webmirror-gui.py
 
 ### Step 1: Open the GUI
 
-After launching, the WebMirror Enterprise Desktop GUI opens instantly.
+After launching, the WebClone Enterprise Desktop GUI opens instantly.
 
 You'll see a beautiful desktop application with a sidebar navigation and clean interface.
 
@@ -173,11 +173,11 @@ The GUI has 4 main pages accessible from the left sidebar:
 
 - **Full GUI Guide**: `docs/GUI_GUIDE.md`
 - **Authentication Help**: `docs/AUTHENTICATION_GUIDE.md`
-- **CLI Alternative**: `webmirror --help`
-- **Issues**: https://github.com/ruslanmv/webmirror/issues
+- **CLI Alternative**: `webclone --help`
+- **Issues**: https://github.com/ruslanmv/webclone/issues
 
 ---
 
-**That's it! You're ready to use WebMirror Enterprise Desktop GUI!** 🎉
+**That's it! You're ready to use WebClone Enterprise Desktop GUI!** 🎉
 
 **Author**: Ruslan Magana | **Website**: ruslanmv.com

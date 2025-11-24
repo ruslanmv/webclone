@@ -1,6 +1,6 @@
-# 📚 WebMirror Examples
+# 📚 WebClone Examples
 
-This directory contains practical examples demonstrating WebMirror's capabilities.
+This directory contains practical examples demonstrating WebClone's capabilities.
 
 ## 🚀 Quick Start
 
@@ -41,7 +41,7 @@ example_1_manual_login_and_save()
 
 ## 🔧 Setup
 
-Ensure WebMirror is installed:
+Ensure WebClone is installed:
 
 ```bash
 # From project root
@@ -81,8 +81,8 @@ Feel free to add more examples! Template:
 #!/usr/bin/env python3
 """Your example description."""
 
-from webmirror.services import SeleniumService
-from webmirror.models.config import SeleniumConfig
+from webclone.services import SeleniumService
+from webclone.models.config import SeleniumConfig
 
 def your_example() -> None:
     """Example function with docstring."""

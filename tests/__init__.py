@@ -1,1 +1,1 @@
-"""Test suite for WebMirror."""
+"""Test suite for WebClone."""

@@ -1,4 +1,4 @@
-"""Structured logging configuration for WebMirror.
+"""Structured logging configuration for WebClone.
 
 This module provides JSON-formatted logging for production environments
 and colored console output for development.

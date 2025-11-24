@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-WebMirror MCP Server Launcher
+WebClone MCP Server Launcher
 
-Launches the WebMirror Model Context Protocol (MCP) server,
+Launches the WebClone Model Context Protocol (MCP) server,
 making website cloning capabilities available to AI agents.
 
 Compatible with:
@@ -20,13 +20,13 @@ from pathlib import Path
 
 
 def main() -> None:
-    """Launch the WebMirror MCP server."""
+    """Launch the WebClone MCP server."""
     print("=" * 70, file=sys.stderr)
-    print("🌐 WebMirror MCP Server", file=sys.stderr)
+    print("🌐 WebClone MCP Server", file=sys.stderr)
     print("=" * 70, file=sys.stderr)
     print("", file=sys.stderr)
     print("🤖 Starting Model Context Protocol server...", file=sys.stderr)
-    print("🔧 AI agents can now use WebMirror tools", file=sys.stderr)
+    print("🔧 AI agents can now use WebClone tools", file=sys.stderr)
     print("=" * 70, file=sys.stderr)
     print("", file=sys.stderr)
 
@@ -34,14 +34,14 @@ def main() -> None:
     src_path = Path(__file__).parent / "src"
     if not src_path.exists():
         print(f"❌ Error: Could not find src directory at {src_path}", file=sys.stderr)
-        print("Make sure you're running this from the WebMirror root directory.", file=sys.stderr)
+        print("Make sure you're running this from the WebClone root directory.", file=sys.stderr)
         sys.exit(1)
 
     sys.path.insert(0, str(src_path))
 
     try:
         # Import and run the MCP server
-        from webmirror.mcp.server import main as mcp_main
+        from webclone.mcp.server import main as mcp_main
 
         asyncio.run(mcp_main())
 

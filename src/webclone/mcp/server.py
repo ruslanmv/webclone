@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-WebMirror MCP Server
+WebClone MCP Server
 
-Official Model Context Protocol (MCP) server for WebMirror.
+Official Model Context Protocol (MCP) server for WebClone.
 Exposes website cloning and file downloading capabilities to AI agents.
 
 Compatible with:
@@ -24,18 +24,18 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
 
-from webmirror.core.crawler import AsyncCrawler
-from webmirror.models.config import CrawlConfig, SeleniumConfig
-from webmirror.services.selenium_service import SeleniumService
+from webclone.core.crawler import AsyncCrawler
+from webclone.models.config import CrawlConfig, SeleniumConfig
+from webclone.services.selenium_service import SeleniumService
 
 
 # Initialize MCP server
-mcp = Server("webmirror")
+mcp = Server("webclone")
 
 
 @mcp.list_tools()
 async def list_tools() -> list[Tool]:
-    """List all available WebMirror tools for AI agents."""
+    """List all available WebClone tools for AI agents."""
     return [
         Tool(
             name="clone_website",
@@ -176,7 +176,7 @@ async def list_tools() -> list[Tool]:
 
 @mcp.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-    """Execute a WebMirror tool based on the request."""
+    """Execute a WebClone tool based on the request."""
 
     if name == "clone_website":
         return await clone_website(arguments)

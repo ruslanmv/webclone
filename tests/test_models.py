@@ -4,8 +4,8 @@ import pytest
 from pathlib import Path
 from pydantic import ValidationError
 
-from webmirror.models.config import CrawlConfig, SeleniumConfig
-from webmirror.models.metadata import AssetMetadata, PageMetadata, ResourceType
+from webclone.models.config import CrawlConfig, SeleniumConfig
+from webclone.models.metadata import AssetMetadata, PageMetadata, ResourceType
 
 
 class TestSeleniumConfig:

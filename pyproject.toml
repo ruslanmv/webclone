@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "webmirror"
+name = "webclone"
 version = "1.0.0"
 description = "A blazingly fast, async-first website cloning engine that preserves everything"
 readme = "README.md"
@@ -65,17 +65,17 @@ mcp = [
 ]
 
 [project.scripts]
-webmirror = "webmirror.cli:app"
-webmirror-mcp = "webmirror.mcp:main"
+webclone = "webclone.cli:app"
+webclone-mcp = "webclone.mcp:main"
 
 [project.urls]
-Homepage = "https://github.com/ruslanmv/webmirror"
-Documentation = "https://ruslanmv.com/webmirror"
-Repository = "https://github.com/ruslanmv/webmirror"
-Issues = "https://github.com/ruslanmv/webmirror/issues"
+Homepage = "https://github.com/ruslanmv/webclone"
+Documentation = "https://ruslanmv.com/webclone"
+Repository = "https://github.com/ruslanmv/webclone"
+Issues = "https://github.com/ruslanmv/webclone/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/webmirror"]
+packages = ["src/webclone"]
 
 [tool.ruff]
 line-length = 100
@@ -122,7 +122,7 @@ asyncio_mode = "auto"
 addopts = """
     -v
     --tb=short
-    --cov=src/webmirror
+    --cov=src/webclone
     --cov-report=term-missing
     --cov-report=html
 """

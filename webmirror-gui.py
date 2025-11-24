@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-WebMirror GUI Launcher
+WebClone GUI Launcher
 
-Simple launcher script for the WebMirror enterprise desktop GUI.
+Simple launcher script for the WebClone enterprise desktop GUI.
 Double-click this file or run from command line.
 
 Author: Ruslan Magana
@@ -14,9 +14,9 @@ from pathlib import Path
 
 
 def main() -> None:
-    """Launch the WebMirror GUI."""
+    """Launch the WebClone GUI."""
     print("=" * 70)
-    print("🌐 WebMirror - Professional Website Cloning Engine")
+    print("🌐 WebClone - Professional Website Cloning Engine")
     print("=" * 70)
     print()
     print("🚀 Starting Enterprise Desktop GUI...")
@@ -27,16 +27,16 @@ def main() -> None:
     src_path = Path(__file__).parent / "src"
     if not src_path.exists():
         print(f"❌ Error: Could not find src directory at {src_path}")
-        print("Make sure you're running this from the WebMirror root directory.")
+        print("Make sure you're running this from the WebClone root directory.")
         sys.exit(1)
 
     sys.path.insert(0, str(src_path))
 
     try:
         # Import and launch the GUI
-        from webmirror.gui.tkinter_app import WebMirrorGUI
+        from webclone.gui.tkinter_app import WebCloneGUI
 
-        app = WebMirrorGUI()
+        app = WebCloneGUI()
         app.run()
 
     except ImportError as e:

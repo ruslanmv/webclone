@@ -1,22 +1,22 @@
-# 🚀 WebMirror Quick Reference Card
+# 🚀 WebClone Quick Reference Card
 
 ## Common Commands
 
 ```bash
 # Basic clone
-webmirror clone https://example.com
+webclone clone https://example.com
 
 # With authentication examples
 python examples/authenticated_crawl.py
 
 # Custom output and workers
-webmirror clone https://example.com -o ./output --workers 10
+webclone clone https://example.com -o ./output --workers 10
 
 # Limit pages
-webmirror clone https://example.com --max-pages 100
+webclone clone https://example.com --max-pages 100
 
 # Deep crawl
-webmirror clone https://example.com --max-depth 5 --recursive
+webclone clone https://example.com --max-depth 5 --recursive
 ```
 
 ## Authentication Fixes
@@ -26,8 +26,8 @@ webmirror clone https://example.com --max-depth 5 --recursive
 **Solution 1: Cookie Auth (Recommended)**
 ```python
 # Step 1: Manual login (run once)
-from webmirror.services import SeleniumService
-from webmirror.models.config import SeleniumConfig
+from webclone.services import SeleniumService
+from webclone.models.config import SeleniumConfig
 from pathlib import Path
 
 service = SeleniumService(SeleniumConfig(headless=False))
@@ -87,16 +87,16 @@ config = CrawlConfig(
 cp .env.example .env
 
 # Edit as needed
-WEBMIRROR_SELENIUM_HEADLESS=true
-WEBMIRROR_SELENIUM_TIMEOUT=30
-WEBMIRROR_MAX_PAGES=100
-WEBMIRROR_WORKERS=5
+WEBCLONE_SELENIUM_HEADLESS=true
+WEBCLONE_SELENIUM_TIMEOUT=30
+WEBCLONE_MAX_PAGES=100
+WEBCLONE_WORKERS=5
 ```
 
 ### Python Configuration
 
 ```python
-from webmirror.models.config import CrawlConfig, SeleniumConfig
+from webclone.models.config import CrawlConfig, SeleniumConfig
 
 # Crawler config
 crawl_config = CrawlConfig(
@@ -181,7 +181,7 @@ service._simulate_human_behavior()
 
 ## Support
 
-- 🐛 Issues: https://github.com/ruslanmv/webmirror/issues
+- 🐛 Issues: https://github.com/ruslanmv/webclone/issues
 - 📧 Email: contact@ruslanmv.com
 - 🌐 Website: ruslanmv.com
 

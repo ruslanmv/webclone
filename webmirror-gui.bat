@@ -1,16 +1,16 @@
 @echo off
-REM WebMirror Enterprise GUI Launcher for Windows
+REM WebClone Enterprise GUI Launcher for Windows
 REM Double-click this file to start the desktop GUI
 
 echo ======================================================================
-echo    WebMirror - Professional Website Cloning Engine
+echo    WebClone - Professional Website Cloning Engine
 echo ======================================================================
 echo.
 echo Starting Enterprise Desktop GUI...
 echo ======================================================================
 echo.
 
-python webmirror-gui.py
+python webclone-gui.py
 
 if %ERRORLEVEL% NEQ 0 (
     echo.

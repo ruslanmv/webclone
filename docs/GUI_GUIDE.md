@@ -1,8 +1,8 @@
-# 🎨 WebMirror Enterprise Desktop GUI - Complete User Guide
+# 🎨 WebClone Enterprise Desktop GUI - Complete User Guide
 
 ## Overview
 
-WebMirror's Enterprise Desktop GUI provides a professional, native desktop interface for website cloning and archival. Built with modern Tkinter (ttkbootstrap), it offers superior performance, instant startup, and seamless OS integration.
+WebClone's Enterprise Desktop GUI provides a professional, native desktop interface for website cloning and archival. Built with modern Tkinter (ttkbootstrap), it offers superior performance, instant startup, and seamless OS integration.
 
 ---
 
@@ -11,8 +11,8 @@ WebMirror's Enterprise Desktop GUI provides a professional, native desktop inter
 ### Installation
 
 ```bash
-# Clone or navigate to WebMirror directory
-cd webmirror
+# Clone or navigate to WebClone directory
+cd webclone
 
 # Install with GUI support
 make install-gui
@@ -33,7 +33,7 @@ The Enterprise Desktop GUI will open immediately as a native application.
 
 ### Application Layout
 
-The WebMirror Enterprise GUI features:
+The WebClone Enterprise GUI features:
 
 - **Left Sidebar**: Navigation with 4 main sections
 - **Content Area**: Dynamic pages with forms, controls, and results
@@ -168,7 +168,7 @@ Comprehensive authentication guide including:
 
 #### Supported Sites
 
-WebMirror's stealth mode works with:
+WebClone's stealth mode works with:
 
 - ✅ **Google** (Gmail, Drive, Docs, Photos, etc.)
 - ✅ **Facebook** (profiles, groups, pages)
@@ -492,13 +492,13 @@ Create `.env` file in project root:
 
 ```bash
 # Selenium Configuration
-WEBMIRROR_SELENIUM_HEADLESS=false  # Show browser (for debugging)
-WEBMIRROR_SELENIUM_TIMEOUT=30
+WEBCLONE_SELENIUM_HEADLESS=false  # Show browser (for debugging)
+WEBCLONE_SELENIUM_TIMEOUT=30
 
 # Crawler Configuration
-WEBMIRROR_WORKERS=5
-WEBMIRROR_DELAY_MS=100
-WEBMIRROR_MAX_PAGES=0  # 0 = unlimited
+WEBCLONE_WORKERS=5
+WEBCLONE_DELAY_MS=100
+WEBCLONE_MAX_PAGES=0  # 0 = unlimited
 ```
 
 ### Cookie Storage
@@ -556,7 +556,7 @@ python -c "import ttkbootstrap; print(ttkbootstrap.__version__)"
 pip install ttkbootstrap>=1.10.1
 ```
 
-**Verify:** Application title should say "WebMirror" and have blue theme
+**Verify:** Application title should say "WebClone" and have blue theme
 
 ### Browser Won't Open for Auth
 
@@ -711,7 +711,7 @@ pip install ttkbootstrap>=1.10.1
 
 **Transmission:**
 - Never sent to remote servers
-- WebMirror has no telemetry or analytics
+- WebClone has no telemetry or analytics
 - All processing is local
 
 **Expiry:**
@@ -760,7 +760,7 @@ pip install ttkbootstrap>=1.10.1
 - 📖 **Documentation**: `docs/` directory
 - 📖 **Quick Start**: `GUI_QUICKSTART.md`
 - 📖 **Authentication**: `docs/AUTHENTICATION_GUIDE.md`
-- 💬 **GitHub Issues**: https://github.com/ruslanmv/webmirror/issues
+- 💬 **GitHub Issues**: https://github.com/ruslanmv/webclone/issues
 - 📧 **Email**: contact@ruslanmv.com
 - 🌐 **Website**: ruslanmv.com
 
@@ -771,7 +771,7 @@ When reporting issues, include:
 1. **Environment**
    - OS: Windows/macOS/Linux + version
    - Python version: `python --version`
-   - WebMirror version: Check `pyproject.toml`
+   - WebClone version: Check `pyproject.toml`
 
 2. **Steps to Reproduce**
    - Exact sequence of actions
@@ -903,10 +903,10 @@ Same Domain Only
 
 ```bash
 # Basic crawl
-webmirror clone https://example.com
+webclone clone https://example.com
 
 # With options
-webmirror clone https://example.com \
+webclone clone https://example.com \
   --output ./mirror \
   --workers 10 \
   --delay-ms 100 \
@@ -914,12 +914,12 @@ webmirror clone https://example.com \
   --recursive
 
 # With authentication
-webmirror clone https://protected.com \
+webclone clone https://protected.com \
   --cookie-file ./cookies/my_session.json
 
 # Help
-webmirror --help
-webmirror clone --help
+webclone --help
+webclone clone --help
 ```
 
 ---
@@ -941,7 +941,7 @@ sites=(
 )
 
 for site in "${sites[@]}"; do
-  webmirror clone "$site" --max-pages 50
+  webclone clone "$site" --max-pages 50
 done
 ```
 
@@ -953,7 +953,7 @@ done
 crontab -e
 
 # Run daily at 2 AM
-0 2 * * * cd /path/to/webmirror && webmirror clone https://example.com
+0 2 * * * cd /path/to/webclone && webclone clone https://example.com
 ```
 
 **Windows (Task Scheduler):**
@@ -962,8 +962,8 @@ crontab -e
 - Trigger: Daily
 - Action: Start Program
   - Program: `python`
-  - Arguments: `-m webmirror.cli clone https://example.com`
-  - Start in: `C:\path\to\webmirror`
+  - Arguments: `-m webclone.cli clone https://example.com`
+  - Start in: `C:\path\to\webclone`
 
 ### Custom Configuration Files
 
@@ -980,7 +980,7 @@ Create `crawl_config.json`:
 
 Load via CLI:
 ```bash
-webmirror clone --config crawl_config.json
+webclone clone --config crawl_config.json
 ```
 
 ---
@@ -1019,4 +1019,4 @@ webmirror clone --config crawl_config.json
 
 ---
 
-*Happy Crawling with WebMirror Enterprise Desktop GUI! 🚀*
+*Happy Crawling with WebClone Enterprise Desktop GUI! 🚀*

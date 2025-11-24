@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Example: Authenticated Website Crawling with WebMirror
+Example: Authenticated Website Crawling with WebClone
 
 This script demonstrates how to crawl a website that requires authentication,
 bypassing "insecure browser" detection and handling GCM/FCM errors.
@@ -11,8 +11,8 @@ Website: ruslanmv.com
 
 from pathlib import Path
 
-from webmirror.models.config import CrawlConfig, SeleniumConfig
-from webmirror.services.selenium_service import SeleniumService
+from webclone.models.config import CrawlConfig, SeleniumConfig
+from webclone.services.selenium_service import SeleniumService
 
 
 def example_1_manual_login_and_save() -> None:
@@ -175,7 +175,7 @@ def example_4_handle_rate_limiting() -> None:
 def main() -> None:
     """Run all examples."""
     print("\n" + "=" * 70)
-    print("WebMirror - Authenticated Crawling Examples")
+    print("WebClone - Authenticated Crawling Examples")
     print("=" * 70)
 
     print("\nAvailable examples:")

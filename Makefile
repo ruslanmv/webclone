@@ -1,5 +1,5 @@
 # ============================================================================
-# WebMirror - Self-Documenting Makefile
+# WebClone - Self-Documenting Makefile
 # ============================================================================
 #
 # This Makefile uses 'uv' for lightning-fast dependency management
@@ -23,7 +23,7 @@ NC := \033[0m # No Color
 
 help: ## Display this help message
 	@echo "$(BLUE)╔═══════════════════════════════════════════════════════════════╗$(NC)"
-	@echo "$(BLUE)║$(NC)  $(GREEN)WebMirror - A Blazingly Fast Website Cloning Engine$(NC)      $(BLUE)║$(NC)"
+	@echo "$(BLUE)║$(NC)  $(GREEN)WebClone - A Blazingly Fast Website Cloning Engine$(NC)      $(BLUE)║$(NC)"
 	@echo "$(BLUE)╚═══════════════════════════════════════════════════════════════╝$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Available commands:$(NC)"
@@ -59,49 +59,49 @@ dev: uv-ensure ## Install development dependencies
 	uv pip install -e ".[dev]"
 	@echo "$(GREEN)✓ Development environment ready!$(NC)"
 
-start: ## Run WebMirror CLI
-	@echo "$(BLUE)🚀 Starting WebMirror...$(NC)"
-	python -m webmirror.cli --help
+start: ## Run WebClone CLI
+	@echo "$(BLUE)🚀 Starting WebClone...$(NC)"
+	python -m webclone.cli --help
 
 run: ## Quick clone example (example.com)
 	@echo "$(BLUE)🌐 Running example clone...$(NC)"
-	python -m webmirror.cli clone https://example.com --max-pages 5 -o ./demo_output
+	python -m webclone.cli clone https://example.com --max-pages 5 -o ./demo_output
 
 ##@ 🎨 GUI Interface
 
 install-gui: uv-ensure ## Install with GUI dependencies
-	@echo "$(BLUE)📦 Installing WebMirror with GUI support...$(NC)"
+	@echo "$(BLUE)📦 Installing WebClone with GUI support...$(NC)"
 	uv pip install -e ".[gui]"
 	@echo "$(GREEN)✓ GUI dependencies installed!$(NC)"
 
 gui: ## Launch the Enterprise Desktop GUI
-	@echo "$(BLUE)🎨 Starting WebMirror Enterprise Desktop GUI...$(NC)"
-	python webmirror-gui.py
+	@echo "$(BLUE)🎨 Starting WebClone Enterprise Desktop GUI...$(NC)"
+	python webclone-gui.py
 
 gui-dev: uv-ensure ## Launch GUI with dev dependencies
-	@echo "$(BLUE)🎨 Starting WebMirror GUI (dev mode)...$(NC)"
+	@echo "$(BLUE)🎨 Starting WebClone GUI (dev mode)...$(NC)"
 	uv pip install -e ".[gui,dev]"
-	python webmirror-gui.py
+	python webclone-gui.py
 
 ##@ 🤖 MCP Server (AI Agents)
 
 install-mcp: uv-ensure ## Install MCP server dependencies
-	@echo "$(BLUE)🤖 Installing WebMirror MCP server...$(NC)"
+	@echo "$(BLUE)🤖 Installing WebClone MCP server...$(NC)"
 	uv pip install -e ".[mcp]"
 	@echo "$(GREEN)✓ MCP server dependencies installed!$(NC)"
 	@echo ""
 	@echo "$(YELLOW)📖 Next steps:$(NC)"
 	@echo "  1. Add to Claude Desktop config (~/.config/claude/config.json):"
-	@echo "     {\"mcpServers\": {\"webmirror\": {\"command\": \"python\", \"args\": [\"$(PWD)/webmirror-mcp.py\"]}}}"
+	@echo "     {\"mcpServers\": {\"webclone\": {\"command\": \"python\", \"args\": [\"$(PWD)/webclone-mcp.py\"]}}}"
 	@echo ""
 	@echo "  2. Or run standalone: make mcp"
 	@echo ""
 
 mcp: ## Launch the MCP server for AI agents
-	@echo "$(BLUE)🤖 Starting WebMirror MCP Server...$(NC)"
+	@echo "$(BLUE)🤖 Starting WebClone MCP Server...$(NC)"
 	@echo "$(YELLOW)💡 Server runs on stdio - use with MCP clients$(NC)"
 	@echo ""
-	python webmirror-mcp.py
+	python webclone-mcp.py
 
 mcp-dev: uv-ensure ## Install MCP with dev dependencies
 	@echo "$(BLUE)🤖 Installing MCP server with dev tools...$(NC)"
@@ -112,7 +112,7 @@ mcp-dev: uv-ensure ## Install MCP with dev dependencies
 
 test: ## Run tests with pytest
 	@echo "$(BLUE)🧪 Running tests...$(NC)"
-	pytest tests/ -v --cov=src/webmirror --cov-report=term-missing
+	pytest tests/ -v --cov=src/webclone --cov-report=term-missing
 	@echo "$(GREEN)✓ Tests complete!$(NC)"
 
 test-fast: ## Run tests without coverage
@@ -147,16 +147,16 @@ audit: lint typecheck ## Run comprehensive quality checks (lint + typecheck + se
 
 docker-build: ## Build Docker image
 	@echo "$(BLUE)🐳 Building Docker image...$(NC)"
-	docker build -t webmirror:latest .
+	docker build -t webclone:latest .
 	@echo "$(GREEN)✓ Docker image built!$(NC)"
 
-docker-run: ## Run WebMirror in Docker
-	@echo "$(BLUE)🐳 Running WebMirror in Docker...$(NC)"
-	docker run --rm -v $(PWD)/output:/data webmirror:latest clone https://example.com --max-pages 5
+docker-run: ## Run WebClone in Docker
+	@echo "$(BLUE)🐳 Running WebClone in Docker...$(NC)"
+	docker run --rm -v $(PWD)/output:/data webclone:latest clone https://example.com --max-pages 5
 
 docker-shell: ## Open shell in Docker container
 	@echo "$(BLUE)🐳 Opening shell in Docker container...$(NC)"
-	docker run --rm -it -v $(PWD)/output:/data --entrypoint /bin/bash webmirror:latest
+	docker run --rm -it -v $(PWD)/output:/data --entrypoint /bin/bash webclone:latest
 
 ##@ 🧹 Maintenance
 
@@ -193,12 +193,12 @@ publish: build ## Publish to PyPI (requires credentials)
 
 coverage: ## Generate HTML coverage report
 	@echo "$(BLUE)📊 Generating coverage report...$(NC)"
-	pytest tests/ --cov=src/webmirror --cov-report=html
+	pytest tests/ --cov=src/webclone --cov-report=html
 	@echo "$(GREEN)✓ Coverage report generated in htmlcov/index.html$(NC)"
 	command -v open >/dev/null 2>&1 && open htmlcov/index.html || true
 
 benchmark: ## Run performance benchmarks
 	@echo "$(BLUE)⚡ Running benchmarks...$(NC)"
 	@echo "$(YELLOW)Benchmarking example.com clone...$(NC)"
-	time python -m webmirror.cli clone https://example.com --max-pages 10 -o ./benchmark_output
+	time python -m webclone.cli clone https://example.com --max-pages 10 -o ./benchmark_output
 	@echo "$(GREEN)✓ Benchmark complete!$(NC)"

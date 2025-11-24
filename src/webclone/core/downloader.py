@@ -10,10 +10,10 @@ import aiofiles
 import aiohttp
 from bs4 import BeautifulSoup
 
-from webmirror.models.config import CrawlConfig
-from webmirror.models.metadata import AssetMetadata, ResourceType
-from webmirror.utils.helpers import calculate_checksum, url_to_filepath
-from webmirror.utils.logger import get_logger
+from webclone.models.config import CrawlConfig
+from webclone.models.metadata import AssetMetadata, ResourceType
+from webclone.utils.helpers import calculate_checksum, url_to_filepath
+from webclone.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -59,7 +59,7 @@ class AssetDownloader:
 
         # Check domain restriction
         if self.config.same_domain_only:
-            from webmirror.utils.helpers import is_same_domain
+            from webclone.utils.helpers import is_same_domain
 
             if not is_same_domain(str(self.config.start_url), absolute_url):
                 logger.debug(f"Skipping external asset: {absolute_url}")

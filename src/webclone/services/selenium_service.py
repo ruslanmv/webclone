@@ -13,9 +13,9 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
 
-from webmirror.models.config import SeleniumConfig
-from webmirror.utils.helpers import safe_filename
-from webmirror.utils.logger import get_logger
+from webclone.models.config import SeleniumConfig
+from webclone.utils.helpers import safe_filename
+from webclone.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
