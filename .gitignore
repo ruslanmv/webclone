@@ -1,0 +1,30 @@
+/.venv
+/__pycache__
+ copy*
+*.pyc
+.DS_Store
+.env
+.idea/
+.vscode/
+*.log
+dist/
+build/
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.ipynb_checkpoints/
+ copy*
+* copy*.*
+
+
+NEW
+/NEWA
+/website_copy
+Remove
+Create
+Creating
+Build
+Install
