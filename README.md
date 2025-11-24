@@ -140,13 +140,58 @@ make gui
 
 ![WebMirror Enterprise GUI](https://via.placeholder.com/800x450?text=WebMirror+Enterprise+Desktop+GUI)
 
+### 🤖 MCP Server for AI Agents (NEW!)
+
+WebMirror is now an **official Model Context Protocol (MCP) server**, making website cloning available to AI agents like Claude, CrewAI, and any MCP-compatible framework!
+
+```bash
+# Install MCP server
+make install-mcp
+
+# Use with Claude Desktop - add to config:
+# ~/.config/claude/claude_desktop_config.json
+{
+  "mcpServers": {
+    "webmirror": {
+      "command": "python",
+      "args": ["/path/to/webmirror/webmirror-mcp.py"]
+    }
+  }
+}
+```
+
+**AI agents can now:**
+- 🌐 **clone_website** - Download entire websites automatically
+- 📥 **download_file** - Fetch specific files or URLs
+- 🔐 **save_authentication** - Guide for saving login sessions
+- 📋 **list_saved_sessions** - View all authentication cookies
+- ℹ️ **get_site_info** - Analyze websites before downloading
+
+**Example with Claude:**
+```
+You: Clone the FastAPI documentation website
+
+Claude: I'll clone that for you.
+[Uses WebMirror MCP tool]
+
+✅ Cloned 127 pages, 543 assets, 45.2 MB total!
+```
+
+**Compatible with:**
+- ✅ Claude Desktop
+- ✅ CrewAI
+- ✅ LangChain
+- ✅ Any MCP-compatible AI framework
+
+📖 **See:** `docs/MCP_GUIDE.md` and `MCP_QUICKSTART.md`
+
 ---
 
 ## 📖 Usage
 
 ### Interface Options
 
-WebMirror offers three ways to use it:
+WebMirror offers four ways to use it:
 
 1. **🎨 Desktop GUI** (Easiest - Enterprise Edition)
    ```bash
@@ -158,7 +203,17 @@ WebMirror offers three ways to use it:
    - Real-time progress tracking
    - Perfect for all users!
 
-2. **💻 Command Line** (Most powerful)
+2. **🤖 MCP Server** (For AI Agents)
+   ```bash
+   make install-mcp
+   ```
+   - Claude Desktop integration
+   - CrewAI compatible
+   - LangChain ready
+   - AI-powered automation
+   - Perfect for AI workflows!
+
+3. **💻 Command Line** (Most Powerful)
    ```bash
    webmirror clone https://example.com
    ```
@@ -167,7 +222,7 @@ WebMirror offers three ways to use it:
    - Remote servers
    - Power users
 
-3. **🐍 Python API** (Most flexible)
+4. **🐍 Python API** (Most Flexible)
    ```python
    from webmirror.core import AsyncCrawler
    # ... your code

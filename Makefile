@@ -9,7 +9,7 @@
 # Website: ruslanmv.com
 # ============================================================================
 
-.PHONY: help install dev test lint format audit clean run docker-build docker-run
+.PHONY: help uv-ensure install dev start run install-gui gui gui-dev install-mcp mcp mcp-dev test test-fast lint format typecheck audit clean clean-all docker-build docker-run docker-shell build publish coverage benchmark
 
 # ANSI color codes for beautiful output
 BLUE := \033[0;34m
@@ -21,99 +21,122 @@ NC := \033[0m # No Color
 # Default target - show help
 .DEFAULT_GOAL := help
 
-## help: Display this help message
-help:
+help: ## Display this help message
 	@echo "$(BLUE)╔═══════════════════════════════════════════════════════════════╗$(NC)"
 	@echo "$(BLUE)║$(NC)  $(GREEN)WebMirror - A Blazingly Fast Website Cloning Engine$(NC)      $(BLUE)║$(NC)"
 	@echo "$(BLUE)╚═══════════════════════════════════════════════════════════════╝$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Available commands:$(NC)"
 	@echo ""
-	@awk 'BEGIN {FS = ":.*##"; printf ""} /^[a-zA-Z_-]+:.*?##/ { printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2 } /^##@/ { printf "\n$(YELLOW)%s$(NC)\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+	@awk 'BEGIN { \
+		FS = ":.*##"; \
+		print ""; \
+	} \
+	/^[a-zA-Z_-]+:.*##/ { \
+		sub(":", "", $$1); \
+		printf "  $(GREEN)%-18s$(NC) %s\n", $$1, $$2; \
+	} \
+	/^##@/ { \
+		printf "\n$(YELLOW)%s$(NC)\n", substr($$0, 5); \
+	}' $(MAKEFILE_LIST)
 	@echo ""
+
+# Internal: ensure uv exists and a .venv is created
+uv-ensure:
+	@echo "$(BLUE)🔍 Checking uv and virtual environment...$(NC)"
+	command -v uv >/dev/null 2>&1 || { echo "$(RED)Error: uv is not installed. Visit https://github.com/astral-sh/uv$(NC)"; exit 1; }
+	test -d ".venv" || (echo "$(BLUE)🐍 Creating virtual environment with uv in .venv...$(NC)" && uv venv .venv)
 
 ##@ 🚀 Development
 
-## install: Install production dependencies using uv
-install:
+install: uv-ensure ## Install production dependencies using uv
 	@echo "$(BLUE)📦 Installing production dependencies with uv...$(NC)"
-	@command -v uv >/dev/null 2>&1 || { echo "$(RED)Error: uv is not installed. Visit https://github.com/astral-sh/uv$(NC)"; exit 1; }
 	uv pip install -e .
 	@echo "$(GREEN)✓ Installation complete!$(NC)"
 
-## dev: Install development dependencies
-dev:
+dev: uv-ensure ## Install development dependencies
 	@echo "$(BLUE)🔧 Installing development dependencies...$(NC)"
-	@command -v uv >/dev/null 2>&1 || { echo "$(RED)Error: uv is not installed.$(NC)"; exit 1; }
 	uv pip install -e ".[dev]"
 	@echo "$(GREEN)✓ Development environment ready!$(NC)"
 
-## start: Run WebMirror CLI
-start:
+start: ## Run WebMirror CLI
 	@echo "$(BLUE)🚀 Starting WebMirror...$(NC)"
 	python -m webmirror.cli --help
 
-## run: Quick clone example (example.com)
-run:
+run: ## Quick clone example (example.com)
 	@echo "$(BLUE)🌐 Running example clone...$(NC)"
 	python -m webmirror.cli clone https://example.com --max-pages 5 -o ./demo_output
 
 ##@ 🎨 GUI Interface
 
-## install-gui: Install with GUI dependencies
-install-gui:
+install-gui: uv-ensure ## Install with GUI dependencies
 	@echo "$(BLUE)📦 Installing WebMirror with GUI support...$(NC)"
-	@command -v uv >/dev/null 2>&1 || { echo "$(RED)Error: uv is not installed.$(NC)"; exit 1; }
 	uv pip install -e ".[gui]"
 	@echo "$(GREEN)✓ GUI dependencies installed!$(NC)"
 
-## gui: Launch the Enterprise Desktop GUI
-gui:
+gui: ## Launch the Enterprise Desktop GUI
 	@echo "$(BLUE)🎨 Starting WebMirror Enterprise Desktop GUI...$(NC)"
-	@python webmirror-gui.py
+	python webmirror-gui.py
 
-## gui-dev: Launch GUI with dev dependencies
-gui-dev:
+gui-dev: uv-ensure ## Launch GUI with dev dependencies
 	@echo "$(BLUE)🎨 Starting WebMirror GUI (dev mode)...$(NC)"
-	@command -v uv >/dev/null 2>&1 || { echo "$(RED)Error: uv is not installed.$(NC)"; exit 1; }
 	uv pip install -e ".[gui,dev]"
-	@python webmirror-gui.py
+	python webmirror-gui.py
+
+##@ 🤖 MCP Server (AI Agents)
+
+install-mcp: uv-ensure ## Install MCP server dependencies
+	@echo "$(BLUE)🤖 Installing WebMirror MCP server...$(NC)"
+	uv pip install -e ".[mcp]"
+	@echo "$(GREEN)✓ MCP server dependencies installed!$(NC)"
+	@echo ""
+	@echo "$(YELLOW)📖 Next steps:$(NC)"
+	@echo "  1. Add to Claude Desktop config (~/.config/claude/config.json):"
+	@echo "     {\"mcpServers\": {\"webmirror\": {\"command\": \"python\", \"args\": [\"$(PWD)/webmirror-mcp.py\"]}}}"
+	@echo ""
+	@echo "  2. Or run standalone: make mcp"
+	@echo ""
+
+mcp: ## Launch the MCP server for AI agents
+	@echo "$(BLUE)🤖 Starting WebMirror MCP Server...$(NC)"
+	@echo "$(YELLOW)💡 Server runs on stdio - use with MCP clients$(NC)"
+	@echo ""
+	python webmirror-mcp.py
+
+mcp-dev: uv-ensure ## Install MCP with dev dependencies
+	@echo "$(BLUE)🤖 Installing MCP server with dev tools...$(NC)"
+	uv pip install -e ".[mcp,dev]"
+	@echo "$(GREEN)✓ MCP development environment ready!$(NC)"
 
 ##@ 🧪 Testing & Quality
 
-## test: Run tests with pytest
-test:
+test: ## Run tests with pytest
 	@echo "$(BLUE)🧪 Running tests...$(NC)"
 	pytest tests/ -v --cov=src/webmirror --cov-report=term-missing
 	@echo "$(GREEN)✓ Tests complete!$(NC)"
 
-## test-fast: Run tests without coverage
-test-fast:
+test-fast: ## Run tests without coverage
 	@echo "$(BLUE)⚡ Running fast tests...$(NC)"
 	pytest tests/ -v --no-cov
 	@echo "$(GREEN)✓ Tests complete!$(NC)"
 
-## lint: Run ruff linter
-lint:
+lint: ## Run ruff linter
 	@echo "$(BLUE)🔍 Running ruff linter...$(NC)"
 	ruff check src/ tests/
 	@echo "$(GREEN)✓ Linting complete!$(NC)"
 
-## format: Format code with ruff
-format:
+format: ## Format code with ruff
 	@echo "$(BLUE)✨ Formatting code with ruff...$(NC)"
 	ruff format src/ tests/
 	ruff check --fix src/ tests/
 	@echo "$(GREEN)✓ Code formatted!$(NC)"
 
-## typecheck: Run mypy type checker
-typecheck:
+typecheck: ## Run mypy type checker
 	@echo "$(BLUE)🔬 Running mypy type checker...$(NC)"
 	mypy src/
 	@echo "$(GREEN)✓ Type checking complete!$(NC)"
 
-## audit: Run comprehensive quality checks (lint + typecheck + security)
-audit: lint typecheck
+audit: lint typecheck ## Run comprehensive quality checks (lint + typecheck + security)
 	@echo "$(BLUE)🔒 Running security audit with bandit...$(NC)"
 	bandit -r src/ -ll
 	@echo "$(GREEN)✓ Security audit complete!$(NC)"
@@ -122,26 +145,22 @@ audit: lint typecheck
 
 ##@ 🐳 Docker
 
-## docker-build: Build Docker image
-docker-build:
+docker-build: ## Build Docker image
 	@echo "$(BLUE)🐳 Building Docker image...$(NC)"
 	docker build -t webmirror:latest .
 	@echo "$(GREEN)✓ Docker image built!$(NC)"
 
-## docker-run: Run WebMirror in Docker
-docker-run:
+docker-run: ## Run WebMirror in Docker
 	@echo "$(BLUE)🐳 Running WebMirror in Docker...$(NC)"
 	docker run --rm -v $(PWD)/output:/data webmirror:latest clone https://example.com --max-pages 5
 
-## docker-shell: Open shell in Docker container
-docker-shell:
+docker-shell: ## Open shell in Docker container
 	@echo "$(BLUE)🐳 Opening shell in Docker container...$(NC)"
 	docker run --rm -it -v $(PWD)/output:/data --entrypoint /bin/bash webmirror:latest
 
 ##@ 🧹 Maintenance
 
-## clean: Remove build artifacts and cache files
-clean:
+clean: ## Remove build artifacts and cache files
 	@echo "$(BLUE)🧹 Cleaning up...$(NC)"
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
@@ -153,37 +172,32 @@ clean:
 	rm -rf dist/ build/ .coverage 2>/dev/null || true
 	@echo "$(GREEN)✓ Cleanup complete!$(NC)"
 
-## clean-all: Deep clean including output directories
-clean-all: clean
+clean-all: clean ## Deep clean including output directories
 	@echo "$(BLUE)🧹 Deep cleaning...$(NC)"
 	rm -rf website_mirror/ demo_output/ output/ 2>/dev/null || true
 	@echo "$(GREEN)✓ Deep cleanup complete!$(NC)"
 
 ##@ 📦 Distribution
 
-## build: Build distribution packages
-build: clean
+build: clean ## Build distribution packages
 	@echo "$(BLUE)📦 Building distribution packages...$(NC)"
 	python -m build
 	@echo "$(GREEN)✓ Build complete! Check dist/ directory$(NC)"
 
-## publish: Publish to PyPI (requires credentials)
-publish: build
+publish: build ## Publish to PyPI (requires credentials)
 	@echo "$(BLUE)📤 Publishing to PyPI...$(NC)"
 	twine upload dist/*
 	@echo "$(GREEN)✓ Published to PyPI!$(NC)"
 
 ##@ 📊 Reports
 
-## coverage: Generate HTML coverage report
-coverage:
+coverage: ## Generate HTML coverage report
 	@echo "$(BLUE)📊 Generating coverage report...$(NC)"
 	pytest tests/ --cov=src/webmirror --cov-report=html
 	@echo "$(GREEN)✓ Coverage report generated in htmlcov/index.html$(NC)"
-	@command -v open >/dev/null 2>&1 && open htmlcov/index.html || true
+	command -v open >/dev/null 2>&1 && open htmlcov/index.html || true
 
-## benchmark: Run performance benchmarks
-benchmark:
+benchmark: ## Run performance benchmarks
 	@echo "$(BLUE)⚡ Running benchmarks...$(NC)"
 	@echo "$(YELLOW)Benchmarking example.com clone...$(NC)"
 	time python -m webmirror.cli clone https://example.com --max-pages 10 -o ./benchmark_output
