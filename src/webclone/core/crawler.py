@@ -1,6 +1,7 @@
 """Async web crawler with intelligent queue management."""
 
 import asyncio
+import sys
 import time
 from collections import deque
 from typing import Optional
@@ -15,6 +16,23 @@ from webclone.models.config import CrawlConfig
 from webclone.models.metadata import CrawlResult, PageMetadata
 from webclone.utils.helpers import is_same_domain, safe_filename, url_to_filepath
 from webclone.utils.logger import get_logger
+
+# Force UTF-8 encoding on Windows consoles to avoid UnicodeEncodeError
+if sys.platform == "win32":
+    import io
+
+    if hasattr(sys.stdout, "buffer"):
+        sys.stdout = io.TextIOWrapper(
+            sys.stdout.buffer,
+            encoding="utf-8",
+            errors="replace",
+        )
+    if hasattr(sys.stderr, "buffer"):
+        sys.stderr = io.TextIOWrapper(
+            sys.stderr.buffer,
+            encoding="utf-8",
+            errors="replace",
+        )
 
 logger = get_logger(__name__)
 
@@ -169,7 +187,9 @@ class AsyncCrawler:
                 # Ensure unique filename
                 counter = 1
                 while html_path.exists():
-                    html_path = self.config.get_pages_dir() / f"{filename}_{counter}.html"
+                    html_path = (
+                        self.config.get_pages_dir() / f"{filename}_{counter}.html"
+                    )
                     counter += 1
 
                 async with aiofiles.open(html_path, "w", encoding="utf-8") as f:
@@ -195,8 +215,13 @@ class AsyncCrawler:
 
                 self.result.add_page(page_metadata)
 
+                # Windows-safe logging (avoid '∞' UnicodeEncodeError)
+                pages_crawled = len(self.visited)
+                max_pages = self.config.max_pages
+                max_display = max_pages if max_pages > 0 else "unlimited"
+
                 logger.info(
-                    f"[{len(self.visited)}/{self.config.max_pages or '∞'}] "
+                    f"[{pages_crawled}/{max_display}] "
                     f"Crawled: {url} ({elapsed_ms}ms, {len(links)} links, {len(assets)} assets)"
                 )
 
@@ -208,7 +233,12 @@ class AsyncCrawler:
                 error = f"Failed to crawl {url}: {e}"
                 logger.warning(error)
                 self.result.add_error(error)
-            except Exception as e:
+            except OSError as e:
+                # Handle OS-level errors (e.g. file system, encoding issues)
+                error = f"OS error while crawling {url}: {e}"
+                logger.error(error, exc_info=True)
+                self.result.add_error(error)
+            except Exception as e:  # noqa: BLE001
                 error = f"Unexpected error crawling {url}: {e}"
                 logger.error(error, exc_info=True)
                 self.result.add_error(error)
