@@ -9,7 +9,13 @@
 # Website: ruslanmv.com
 # ============================================================================
 
-.PHONY: help uv-ensure install dev start run install-gui gui gui-dev install-mcp mcp mcp-dev test test-fast lint format typecheck audit clean clean-all docker-build docker-run docker-shell build publish coverage benchmark
+.PHONY: help uv-ensure install install-all dev start run \
+        install-gui gui gui-dev \
+        install-mcp mcp mcp-dev \
+        test test-fast lint format typecheck audit \
+        clean clean-all \
+        docker-build docker-run docker-shell \
+        build publish coverage benchmark
 
 # ANSI color codes for beautiful output
 BLUE := \033[0;34m
@@ -49,10 +55,24 @@ uv-ensure:
 
 ##@ 🚀 Development
 
-install: uv-ensure ## Install production dependencies using uv
+install: uv-ensure ## Install production dependencies using uv (CLI only)
 	@echo "$(BLUE)📦 Installing production dependencies with uv...$(NC)"
 	uv pip install -e .
 	@echo "$(GREEN)✓ Installation complete!$(NC)"
+
+install-all: uv-ensure ## Install CLI + GUI + MCP (all-in-one)
+	@echo "$(BLUE)📦 Installing WebClone CLI + GUI + MCP...$(NC)"
+	uv pip install -e ".[gui,mcp]"
+	@echo "$(GREEN)✓ All WebClone components installed!$(NC)"
+	@echo ""
+	@echo "$(YELLOW)📖 Next steps for MCP (Claude Desktop):$(NC)"
+	@echo "  Add to ~/.config/claude/config.json:"
+	@echo "    {\"mcpServers\": {\"webclone\": {\"command\": \"webclone-mcp\"}}}"
+	@echo ""
+	@echo "  Then you can run:"
+	@echo "    - CLI: webclone ..."
+	@echo "    - GUI: make gui"
+	@echo "    - MCP: make mcp"
 
 dev: uv-ensure ## Install development dependencies
 	@echo "$(BLUE)🔧 Installing development dependencies...$(NC)"
@@ -92,7 +112,7 @@ install-mcp: uv-ensure ## Install MCP server dependencies
 	@echo ""
 	@echo "$(YELLOW)📖 Next steps:$(NC)"
 	@echo "  1. Add to Claude Desktop config (~/.config/claude/config.json):"
-	@echo "     {\"mcpServers\": {\"webclone\": {\"command\": \"python\", \"args\": [\"$(PWD)/webclone-mcp.py\"]}}}"
+	@echo "     {\"mcpServers\": {\"webclone\": {\"command\": \"webclone-mcp\"}}}"
 	@echo ""
 	@echo "  2. Or run standalone: make mcp"
 	@echo ""
@@ -101,7 +121,7 @@ mcp: ## Launch the MCP server for AI agents
 	@echo "$(BLUE)🤖 Starting WebClone MCP Server...$(NC)"
 	@echo "$(YELLOW)💡 Server runs on stdio - use with MCP clients$(NC)"
 	@echo ""
-	python webclone-mcp.py
+	python -m webclone.mcp
 
 mcp-dev: uv-ensure ## Install MCP with dev dependencies
 	@echo "$(BLUE)🤖 Installing MCP server with dev tools...$(NC)"
@@ -192,7 +212,7 @@ publish: build ## Publish to PyPI (requires credentials)
 ##@ 📊 Reports
 
 coverage: ## Generate HTML coverage report
-	@echo "$(BLUE)📊 Generating coverage report...$(NC)"
+	@echo "$(BLUE)📊 Generating HTML coverage report...$(NC)"
 	pytest tests/ --cov=src/webclone --cov-report=html
 	@echo "$(GREEN)✓ Coverage report generated in htmlcov/index.html$(NC)"
 	command -v open >/dev/null 2>&1 && open htmlcov/index.html || true
