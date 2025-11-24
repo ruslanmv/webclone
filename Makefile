@@ -58,6 +58,27 @@ run:
 	@echo "$(BLUE)🌐 Running example clone...$(NC)"
 	python -m webmirror.cli clone https://example.com --max-pages 5 -o ./demo_output
 
+##@ 🎨 GUI Interface
+
+## install-gui: Install with GUI dependencies
+install-gui:
+	@echo "$(BLUE)📦 Installing WebMirror with GUI support...$(NC)"
+	@command -v uv >/dev/null 2>&1 || { echo "$(RED)Error: uv is not installed.$(NC)"; exit 1; }
+	uv pip install -e ".[gui]"
+	@echo "$(GREEN)✓ GUI dependencies installed!$(NC)"
+
+## gui: Launch the Enterprise Desktop GUI
+gui:
+	@echo "$(BLUE)🎨 Starting WebMirror Enterprise Desktop GUI...$(NC)"
+	@python webmirror-gui.py
+
+## gui-dev: Launch GUI with dev dependencies
+gui-dev:
+	@echo "$(BLUE)🎨 Starting WebMirror GUI (dev mode)...$(NC)"
+	@command -v uv >/dev/null 2>&1 || { echo "$(RED)Error: uv is not installed.$(NC)"; exit 1; }
+	uv pip install -e ".[gui,dev]"
+	@python webmirror-gui.py
+
 ##@ 🧪 Testing & Quality
 
 ## test: Run tests with pytest
