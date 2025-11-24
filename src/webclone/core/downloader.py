@@ -86,6 +86,10 @@ class AssetDownloader:
 
                 # Save to disk
                 save_path = url_to_filepath(absolute_url, self.config.get_assets_dir())
+                
+                # CRITICAL FIX: Ensure parent directory exists with exist_ok=True
+                save_path.parent.mkdir(parents=True, exist_ok=True)
+                
                 async with aiofiles.open(save_path, "wb") as f:
                     await f.write(content)
 
@@ -115,6 +119,10 @@ class AssetDownloader:
                 return None
             except aiohttp.ClientError as e:
                 logger.warning(f"Failed to download {absolute_url}: {e}")
+                return None
+            except OSError as e:
+                # Handle Windows-specific file system errors
+                logger.error(f"File system error downloading {absolute_url}: {e}")
                 return None
             except Exception as e:
                 logger.error(f"Unexpected error downloading {absolute_url}: {e}")
