@@ -63,6 +63,8 @@ demo_output/
 output/
 *.log
 *.db
+cookies/*.json
+!cookies/README.md
 
 # Environment
 .env

@@ -52,9 +52,15 @@ dev = [
     "types-beautifulsoup4>=4.12.0",
     "bandit>=1.7.0",
 ]
+gui = [
+    "streamlit>=1.32.0",
+    "streamlit-option-menu>=0.3.12",
+    "plotly>=5.20.0",
+]
 
 [project.scripts]
 webmirror = "webmirror.cli:app"
+webmirror-gui = "streamlit run src/webmirror/gui/streamlit_app.py"
 
 [project.urls]
 Homepage = "https://github.com/ruslanmv/webmirror"
