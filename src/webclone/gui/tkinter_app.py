@@ -1842,7 +1842,16 @@ Troubleshooting:
         logger.info("Crawler thread started")
         
         try:
-            # Create config
+            # Determine cookie file first
+            cookie_file_path = None
+            cookie_selection = self.cookie_file_var.get()
+            if cookie_selection and cookie_selection != "None":
+                cookie_file = Path("./cookies") / f"{cookie_selection}.json"
+                if cookie_file.exists():
+                    cookie_file_path = cookie_file
+                    logger.info(f"Using cookie file: {cookie_file}")
+            
+            # Create config WITH cookie_file in constructor
             logger.info("Creating crawl configuration")
             config = CrawlConfig(
                 start_url=self.crawl_url_var.get(),
@@ -1855,17 +1864,10 @@ Troubleshooting:
                 save_pdf=self.generate_pdf_var.get(),
                 workers=self.workers_var.get(),
                 delay_ms=self.delay_var.get(),
+                cookie_file=cookie_file_path,  # ✅ PASS IT IN CONSTRUCTOR
             )
             
             logger.info(f"Crawl config: {config}")
-
-            # Load cookies if selected
-            cookie_selection = self.cookie_file_var.get()
-            if cookie_selection and cookie_selection != "None":
-                cookie_file = Path("./cookies") / f"{cookie_selection}.json"
-                if cookie_file.exists():
-                    logger.info(f"Using cookie file: {cookie_file}")
-                    config.cookie_file = cookie_file  # type: ignore[attr-defined]
 
             # Run crawl
             logger.info("Starting async crawl")

@@ -28,6 +28,7 @@ Traditional website cloners are **slow**, **blocking**, and **fragile**. They do
 
 Whether you're archiving websites, conducting competitive research, or building training datasets, **WebClone** is the definitive solution.
 
+
 ---
 
 ## ✨ Features
@@ -122,6 +123,7 @@ make install-gui
 # Launch the Enterprise Desktop GUI
 make gui
 ```
+![](assets/2025-11-25-00-37-55.png)
 
 **The GUI opens instantly as a native desktop application with:**
 - 🏠 **Home Dashboard** - Feature overview and quick start guide
