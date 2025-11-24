@@ -4,7 +4,7 @@ WebClone Enterprise GUI - Professional Tkinter Application
 
 A world-class desktop interface for website cloning with:
 - Modern, enterprise-grade design
-- Persistent browser sessions
+- Persistent browser sessions across page navigation
 - Automatic URL synchronization
 - Session reload capability
 - View downloaded sites
@@ -38,7 +38,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('webclone_gui.log'),
+        logging.FileHandler('webclone_gui.log', encoding='utf-8'),
         logging.StreamHandler()
     ]
 )
@@ -118,9 +118,18 @@ class WebCloneGUI:
         self.url_monitor_thread: Optional[threading.Thread] = None
         self.stop_url_monitor = False
         self.current_browser_url = ""
-        self.saved_session_url = ""  # Store URL when session is saved
+        self.saved_session_url = ""
+        
+        # CRITICAL FIX: Initialize StringVars at instance level for session persistence
+        self.browser_status_var = tk.StringVar(value="Browser not active")
+        self.current_url_var = tk.StringVar(value="Not browsing")
+        self.auth_status_var = tk.StringVar(value="")
+        
+        # Store canvas and indicator references (will be recreated on page load)
+        self.status_canvas: Optional[tk.Canvas] = None
+        self.status_indicator: Optional[int] = None
 
-        logger.info("Application state initialized")
+        logger.info("Application state initialized with persistent StringVars")
 
         # Initialize UI
         self._setup_styles()
@@ -253,7 +262,7 @@ class WebCloneGUI:
 
     def _show_page(self, page_id: str) -> None:
         """Switch to a different page."""
-        logger.info(f"Switching to page: {page_id}")
+        logger.info(f"Switching to page: {page_id} (Browser active: {self.browser_active})")
         
         # Clear content frame
         for widget in self.content_frame.winfo_children():
@@ -454,8 +463,8 @@ class WebCloneGUI:
         self._create_auth_help_tab(help_tab)
 
     def _create_new_login_tab(self, parent: ttk.Frame) -> None:
-        """Create new login form."""
-        logger.info("Creating new login tab")
+        """Create new login form with session persistence."""
+        logger.info(f"Creating new login tab (Browser active: {self.browser_active})")
         
         # Instructions
         info_frame = ttk.Frame(parent)
@@ -481,7 +490,11 @@ class WebCloneGUI:
         url_frame.pack(fill=X, pady=10)
 
         ttk.Label(url_frame, text="Login URL:", width=20).pack(side=LEFT)
-        self.auth_url_var = tk.StringVar(value="https://accounts.google.com")
+        
+        # Initialize or reuse auth_url_var
+        if not hasattr(self, 'auth_url_var'):
+            self.auth_url_var = tk.StringVar(value="https://accounts.google.com")
+        
         url_entry = ttk.Entry(url_frame, textvariable=self.auth_url_var, width=60)
         url_entry.pack(side=LEFT, fill=X, expand=YES, padx=10)
 
@@ -490,7 +503,11 @@ class WebCloneGUI:
         name_frame.pack(fill=X, pady=10)
 
         ttk.Label(name_frame, text="Session Name:", width=20).pack(side=LEFT)
-        self.session_name_var = tk.StringVar(value="my_session")
+        
+        # Initialize or reuse session_name_var
+        if not hasattr(self, 'session_name_var'):
+            self.session_name_var = tk.StringVar(value="my_session")
+        
         name_entry = ttk.Entry(name_frame, textvariable=self.session_name_var, width=60)
         name_entry.pack(side=LEFT, fill=X, expand=YES, padx=10)
 
@@ -512,12 +529,33 @@ class WebCloneGUI:
         indicator_frame = ttk.Frame(status_frame)
         indicator_frame.pack(fill=X, pady=5)
 
-        # Create canvas for status indicator (circle)
-        self.status_canvas = tk.Canvas(indicator_frame, width=20, height=20, bg='white', highlightthickness=0)
+        # CRITICAL FIX: Recreate canvas with correct color based on current browser state
+        self.status_canvas = tk.Canvas(
+            indicator_frame, 
+            width=20, 
+            height=20, 
+            bg='white', 
+            highlightthickness=0
+        )
         self.status_canvas.pack(side=LEFT, padx=5)
-        self.status_indicator = self.status_canvas.create_oval(2, 2, 18, 18, fill='gray', outline='')
+        
+        # Set indicator color based on current browser state
+        indicator_color = '#00ff00' if self.browser_active else 'gray'
+        self.status_indicator = self.status_canvas.create_oval(
+            2, 2, 18, 18, 
+            fill=indicator_color, 
+            outline=''
+        )
+        
+        # Update StringVar to reflect current state
+        if self.browser_active:
+            self.browser_status_var.set("✅ Browser Loaded")
+        else:
+            self.browser_status_var.set("Browser not active")
+        
+        logger.info(f"Status indicator created with color: {indicator_color}")
 
-        self.browser_status_var = tk.StringVar(value="Browser not active")
+        # Use instance-level StringVar (already created in __init__)
         status_label = ttk.Label(
             indicator_frame,
             textvariable=self.browser_status_var,
@@ -530,24 +568,36 @@ class WebCloneGUI:
         url_display_frame.pack(fill=X, pady=5)
 
         ttk.Label(url_display_frame, text="Current URL:", width=15).pack(side=LEFT)
-        self.current_url_var = tk.StringVar(value="Not browsing")
+        
+        # Update current_url_var with actual browser URL if available
+        if self.current_browser_url:
+            self.current_url_var.set(self.current_browser_url)
+        
         url_display = ttk.Entry(
             url_display_frame,
-            textvariable=self.current_url_var,
+            textvariable=self.current_url_var,  # Reuse instance variable
             state='readonly',
             width=70
         )
         url_display.pack(side=LEFT, fill=X, expand=YES, padx=5)
 
-        # Action buttons
+        # Action buttons - CRITICAL FIX: Set states based on browser_active
         button_frame = ttk.Frame(parent)
         button_frame.pack(pady=20)
+
+        # Determine button states based on current browser status
+        open_btn_state = DISABLED if self.browser_active else NORMAL
+        stop_btn_state = NORMAL if self.browser_active else DISABLED
+        save_btn_state = NORMAL if self.browser_active else DISABLED
+
+        logger.info(f"Button states - Open: {open_btn_state}, Stop: {stop_btn_state}, Save: {save_btn_state}")
 
         # Open Browser Button
         open_btn_kwargs: dict[str, Any] = {
             "text": "🌐 Open Browser for Login",
             "command": self._open_browser_for_login,
             "width": 30,
+            "state": open_btn_state,
         }
         if USING_TTKBOOTSTRAP:
             open_btn_kwargs["bootstyle"] = "info"
@@ -560,7 +610,7 @@ class WebCloneGUI:
             "text": "⏹️ Stop Browser",
             "command": self._stop_browser,
             "width": 30,
-            "state": DISABLED,
+            "state": stop_btn_state,
         }
         if USING_TTKBOOTSTRAP:
             stop_browser_kwargs["bootstyle"] = "danger"
@@ -573,7 +623,7 @@ class WebCloneGUI:
             "text": "💾 Save Session (Keep Browser Alive)",
             "command": self._save_session_cookies,
             "width": 35,
-            "state": DISABLED,
+            "state": save_btn_state,
         }
         if USING_TTKBOOTSTRAP:
             save_btn_kwargs["bootstyle"] = "success"
@@ -581,16 +631,17 @@ class WebCloneGUI:
         self.save_session_btn = ttk.Button(button_frame, **save_btn_kwargs)
         self.save_session_btn.pack(pady=5)
 
-        # Status
-        self.auth_status_var = tk.StringVar(value="")
+        # Status - Use instance-level StringVar (already created in __init__)
         status_kwargs: dict[str, Any] = {
-            "textvariable": self.auth_status_var,
+            "textvariable": self.auth_status_var,  # Reuse instance variable
             "font": ("Segoe UI", 10),
         }
         if USING_TTKBOOTSTRAP:
             status_kwargs["bootstyle"] = "secondary"
         status_label = ttk.Label(parent, **status_kwargs)
         status_label.pack(pady=10)
+        
+        logger.info("New login tab created with session persistence")
 
     def _update_browser_status(self, is_active: bool, message: str = "") -> None:
         """Update browser status indicator."""
@@ -598,16 +649,16 @@ class WebCloneGUI:
         
         self.browser_active = is_active
         
-        if is_active:
-            # Green indicator
-            self.status_canvas.itemconfig(self.status_indicator, fill='#00ff00')
-            self.browser_status_var.set("✅ Browser Loaded")
-            logger.info("Browser status: ACTIVE (green indicator)")
-        else:
-            # Gray/Red indicator
-            self.status_canvas.itemconfig(self.status_indicator, fill='gray')
-            self.browser_status_var.set("⭕ Browser Inactive")
-            logger.info("Browser status: INACTIVE (gray indicator)")
+        # Update indicator color if canvas exists
+        if self.status_canvas and self.status_indicator:
+            if is_active:
+                self.status_canvas.itemconfig(self.status_indicator, fill='#00ff00')
+                self.browser_status_var.set("✅ Browser Loaded")
+                logger.info("Browser status: ACTIVE (green indicator)")
+            else:
+                self.status_canvas.itemconfig(self.status_indicator, fill='gray')
+                self.browser_status_var.set("⭕ Browser Inactive")
+                logger.info("Browser status: INACTIVE (gray indicator)")
         
         if message:
             self.auth_status_var.set(message)
@@ -635,7 +686,7 @@ class WebCloneGUI:
                         self.current_browser_url = current_url
                         logger.info(f"Browser navigated to: {current_url}")
                         # Update UI from main thread
-                        self.root.after(0, lambda: self.current_url_var.set(current_url))
+                        self.root.after(0, lambda url=current_url: self.current_url_var.set(url))
             except Exception as e:
                 logger.error(f"Error monitoring URL: {e}")
             
@@ -700,7 +751,7 @@ class WebCloneGUI:
         btn_frame = ttk.Frame(parent)
         btn_frame.pack(pady=10)
 
-        # Load Session Button (NEW)
+        # Load Session Button
         load_kwargs: dict[str, Any] = {
             "text": "🔄 Load Selected Session",
             "command": self._load_selected_session,
@@ -779,7 +830,8 @@ class WebCloneGUI:
 
             # Open new browser
             self.auth_status_var.set(f"Loading session '{session_name}'...")
-            self.open_browser_btn.configure(state=DISABLED)
+            if hasattr(self, 'open_browser_btn'):
+                self.open_browser_btn.configure(state=DISABLED)
             self._update_browser_status(False, "Loading session...")
 
             # Create Selenium service
@@ -817,9 +869,11 @@ class WebCloneGUI:
                 f"✅ Session '{session_name}' loaded! Continue browsing."
             )
             
-            # Enable buttons
-            self.save_session_btn.configure(state=NORMAL)
-            self.stop_browser_btn.configure(state=NORMAL)
+            # Enable buttons if on auth page
+            if hasattr(self, 'save_session_btn'):
+                self.save_session_btn.configure(state=NORMAL)
+            if hasattr(self, 'stop_browser_btn'):
+                self.stop_browser_btn.configure(state=NORMAL)
             
             # Start URL monitoring
             self._start_url_monitoring()
@@ -837,7 +891,8 @@ class WebCloneGUI:
             logger.error(f"Failed to load session: {e}", exc_info=True)
             messagebox.showerror("Error", f"Failed to load session:\n{str(e)}")
             self._update_browser_status(False, "❌ Error loading session")
-            self.open_browser_btn.configure(state=NORMAL)
+            if hasattr(self, 'open_browser_btn'):
+                self.open_browser_btn.configure(state=NORMAL)
 
     def _create_auth_help_tab(self, parent: ttk.Frame) -> None:
         """Create authentication help content."""
@@ -869,6 +924,7 @@ Session Management:
 • Click "Load Selected Session" button to manually load
 • Browser reopens with your saved cookies
 • Continue from where you left off
+• Browser status persists when switching pages!
 
 Supported Sites:
 ✅ Google (Gmail, Drive, Docs, etc.)
@@ -1411,7 +1467,7 @@ Troubleshooting:
         )
         info.pack(pady=20)
 
-        # View Downloaded Site Button (NEW)
+        # View Downloaded Site Button
         view_site_kwargs: dict[str, Any] = {
             "text": "🌐 View Downloaded Site",
             "command": self._view_downloaded_site,
