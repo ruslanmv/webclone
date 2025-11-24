@@ -1,55 +1,169 @@
-# Makefile for Windows Environments (cmd.exe / PowerShell)
+# ============================================================================
+# WebMirror - Self-Documenting Makefile
+# ============================================================================
+#
+# This Makefile uses 'uv' for lightning-fast dependency management
+# Run 'make' or 'make help' to see all available commands
+#
+# Author: Ruslan Magana
+# Website: ruslanmv.com
+# ============================================================================
 
-# Use 'python' as the default interpreter.
-# Ensure Python is in your PATH.
-PYTHON = python
+.PHONY: help install dev test lint format audit clean run docker-build docker-run
 
-# The name of the virtual environment directory.
-VENV_DIR = .venv
+# ANSI color codes for beautiful output
+BLUE := \033[0;34m
+GREEN := \033[0;32m
+YELLOW := \033[0;33m
+RED := \033[0;31m
+NC := \033[0m # No Color
 
-# Define the virtual environment's Python and Pip executables for Windows.
-VENV_PYTHON = $(VENV_DIR)/Scripts/python.exe
-VENV_PIP = $(VENV_DIR)/Scripts/pip.exe
+# Default target - show help
+.DEFAULT_GOAL := help
 
-# Use .PHONY to declare targets that are not actual files.
-.PHONY: all help install venv clean run
-
-# The default command, executed when you just run 'make'.
-all: help
-
+## help: Display this help message
 help:
-	@echo "Available commands:"
-	@echo.
-	@echo  make venv      Creates a Python virtual environment.
-	@echo  make install   Installs dependencies from requirements.txt.
-	@echo  make run       Runs the main python script.
-	@echo  make clean     Removes the virtual environment and cache files.
+	@echo "$(BLUE)╔═══════════════════════════════════════════════════════════════╗$(NC)"
+	@echo "$(BLUE)║$(NC)  $(GREEN)WebMirror - A Blazingly Fast Website Cloning Engine$(NC)      $(BLUE)║$(NC)"
+	@echo "$(BLUE)╚═══════════════════════════════════════════════════════════════╝$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Available commands:$(NC)"
+	@echo ""
+	@awk 'BEGIN {FS = ":.*##"; printf ""} /^[a-zA-Z_-]+:.*?##/ { printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2 } /^##@/ { printf "\n$(YELLOW)%s$(NC)\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+	@echo ""
 
-# This target creates the virtual environment.
-# NOTE: All command lines below MUST start with a TAB character, not spaces.
-$(VENV_DIR)/Scripts/activate:
-	@echo "Creating virtual environment in $(VENV_DIR)..."
-	$(PYTHON) -m venv $(VENV_DIR)
+##@ 🚀 Development
 
-# The 'venv' target is a user-friendly alias for creating the environment.
-venv: $(VENV_DIR)/Scripts/activate
+## install: Install production dependencies using uv
+install:
+	@echo "$(BLUE)📦 Installing production dependencies with uv...$(NC)"
+	@command -v uv >/dev/null 2>&1 || { echo "$(RED)Error: uv is not installed. Visit https://github.com/astral-sh/uv$(NC)"; exit 1; }
+	uv pip install -e .
+	@echo "$(GREEN)✓ Installation complete!$(NC)"
 
-# The 'install' target depends on 'venv', so the environment will be created automatically.
-install: venv
-	@echo "Installing packages from requirements.txt..."
-	@echo "NOTE: Ensure you have a 'requirements.txt' file."
-	$(VENV_PIP) install -r requirements.txt
-	@echo "Installation complete."
+## dev: Install development dependencies
+dev:
+	@echo "$(BLUE)🔧 Installing development dependencies...$(NC)"
+	@command -v uv >/dev/null 2>&1 || { echo "$(RED)Error: uv is not installed.$(NC)"; exit 1; }
+	uv pip install -e ".[dev]"
+	@echo "$(GREEN)✓ Development environment ready!$(NC)"
 
-# A target to run the main script using the virtual environment's Python.
-run: venv
-	@echo "Running the script..."
-	$(VENV_PYTHON) ui.py
+## start: Run WebMirror CLI
+start:
+	@echo "$(BLUE)🚀 Starting WebMirror...$(NC)"
+	python -m webmirror.cli --help
 
-# The 'clean' target removes the virtual environment and other temporary files.
-# NOTE: We use '%%d' because '%' must be escaped in a Makefile recipe.
+## run: Quick clone example (example.com)
+run:
+	@echo "$(BLUE)🌐 Running example clone...$(NC)"
+	python -m webmirror.cli clone https://example.com --max-pages 5 -o ./demo_output
+
+##@ 🧪 Testing & Quality
+
+## test: Run tests with pytest
+test:
+	@echo "$(BLUE)🧪 Running tests...$(NC)"
+	pytest tests/ -v --cov=src/webmirror --cov-report=term-missing
+	@echo "$(GREEN)✓ Tests complete!$(NC)"
+
+## test-fast: Run tests without coverage
+test-fast:
+	@echo "$(BLUE)⚡ Running fast tests...$(NC)"
+	pytest tests/ -v --no-cov
+	@echo "$(GREEN)✓ Tests complete!$(NC)"
+
+## lint: Run ruff linter
+lint:
+	@echo "$(BLUE)🔍 Running ruff linter...$(NC)"
+	ruff check src/ tests/
+	@echo "$(GREEN)✓ Linting complete!$(NC)"
+
+## format: Format code with ruff
+format:
+	@echo "$(BLUE)✨ Formatting code with ruff...$(NC)"
+	ruff format src/ tests/
+	ruff check --fix src/ tests/
+	@echo "$(GREEN)✓ Code formatted!$(NC)"
+
+## typecheck: Run mypy type checker
+typecheck:
+	@echo "$(BLUE)🔬 Running mypy type checker...$(NC)"
+	mypy src/
+	@echo "$(GREEN)✓ Type checking complete!$(NC)"
+
+## audit: Run comprehensive quality checks (lint + typecheck + security)
+audit: lint typecheck
+	@echo "$(BLUE)🔒 Running security audit with bandit...$(NC)"
+	bandit -r src/ -ll
+	@echo "$(GREEN)✓ Security audit complete!$(NC)"
+	@echo ""
+	@echo "$(GREEN)✨ All quality checks passed!$(NC)"
+
+##@ 🐳 Docker
+
+## docker-build: Build Docker image
+docker-build:
+	@echo "$(BLUE)🐳 Building Docker image...$(NC)"
+	docker build -t webmirror:latest .
+	@echo "$(GREEN)✓ Docker image built!$(NC)"
+
+## docker-run: Run WebMirror in Docker
+docker-run:
+	@echo "$(BLUE)🐳 Running WebMirror in Docker...$(NC)"
+	docker run --rm -v $(PWD)/output:/data webmirror:latest clone https://example.com --max-pages 5
+
+## docker-shell: Open shell in Docker container
+docker-shell:
+	@echo "$(BLUE)🐳 Opening shell in Docker container...$(NC)"
+	docker run --rm -it -v $(PWD)/output:/data --entrypoint /bin/bash webmirror:latest
+
+##@ 🧹 Maintenance
+
+## clean: Remove build artifacts and cache files
 clean:
-	@echo "Cleaning up project..."
-	@if exist $(VENV_DIR) ( rmdir /s /q $(VENV_DIR) )
-	@for /d /r . %%d in (__pycache__) do @if exist "%%d" rmdir /s /q "%%d"
-	@echo "Cleanup complete."
+	@echo "$(BLUE)🧹 Cleaning up...$(NC)"
+	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name ".ruff_cache" -exec rm -rf {} + 2>/dev/null || true
+	find . -type f -name "*.pyc" -delete 2>/dev/null || true
+	find . -type d -name "htmlcov" -exec rm -rf {} + 2>/dev/null || true
+	rm -rf dist/ build/ .coverage 2>/dev/null || true
+	@echo "$(GREEN)✓ Cleanup complete!$(NC)"
+
+## clean-all: Deep clean including output directories
+clean-all: clean
+	@echo "$(BLUE)🧹 Deep cleaning...$(NC)"
+	rm -rf website_mirror/ demo_output/ output/ 2>/dev/null || true
+	@echo "$(GREEN)✓ Deep cleanup complete!$(NC)"
+
+##@ 📦 Distribution
+
+## build: Build distribution packages
+build: clean
+	@echo "$(BLUE)📦 Building distribution packages...$(NC)"
+	python -m build
+	@echo "$(GREEN)✓ Build complete! Check dist/ directory$(NC)"
+
+## publish: Publish to PyPI (requires credentials)
+publish: build
+	@echo "$(BLUE)📤 Publishing to PyPI...$(NC)"
+	twine upload dist/*
+	@echo "$(GREEN)✓ Published to PyPI!$(NC)"
+
+##@ 📊 Reports
+
+## coverage: Generate HTML coverage report
+coverage:
+	@echo "$(BLUE)📊 Generating coverage report...$(NC)"
+	pytest tests/ --cov=src/webmirror --cov-report=html
+	@echo "$(GREEN)✓ Coverage report generated in htmlcov/index.html$(NC)"
+	@command -v open >/dev/null 2>&1 && open htmlcov/index.html || true
+
+## benchmark: Run performance benchmarks
+benchmark:
+	@echo "$(BLUE)⚡ Running benchmarks...$(NC)"
+	@echo "$(YELLOW)Benchmarking example.com clone...$(NC)"
+	time python -m webmirror.cli clone https://example.com --max-pages 10 -o ./benchmark_output
+	@echo "$(GREEN)✓ Benchmark complete!$(NC)"
