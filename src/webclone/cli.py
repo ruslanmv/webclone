@@ -17,13 +17,13 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeEl
 from rich.table import Table
 from rich.tree import Tree
 
-from webmirror import __version__
-from webmirror.core.crawler import AsyncCrawler
-from webmirror.models.config import CrawlConfig
-from webmirror.utils.logger import setup_logging
+from webclone import __version__
+from webclone.core.crawler import AsyncCrawler
+from webclone.models.config import CrawlConfig
+from webclone.utils.logger import setup_logging
 
 app = typer.Typer(
-    name="webmirror",
+    name="webclone",
     help="🚀 A blazingly fast, async-first website cloning engine",
     add_completion=False,
 )
@@ -34,7 +34,7 @@ console = Console()
 def version_callback(value: bool) -> None:
     """Print version and exit."""
     if value:
-        console.print(f"[bold cyan]WebMirror[/bold cyan] version [bold]{__version__}[/bold]")
+        console.print(f"[bold cyan]WebClone[/bold cyan] version [bold]{__version__}[/bold]")
         raise typer.Exit()
 
 
@@ -49,7 +49,7 @@ def main(
         help="Show version and exit",
     ),
 ) -> None:
-    """WebMirror - Clone websites with style."""
+    """WebClone - Clone websites with style."""
     pass
 
 
@@ -86,7 +86,7 @@ def clone(
     """🌐 Clone a website with all its assets.
 
     Example:
-        webmirror clone https://example.com -o ./mirror --workers 10
+        webclone clone https://example.com -o ./mirror --workers 10
 
     This will download the website to the ./mirror directory using 10 concurrent workers.
     """
@@ -150,7 +150,7 @@ def info(url: str = typer.Argument(..., help="URL to analyze")) -> None:
     """📊 Show information about a URL without downloading.
 
     Example:
-        webmirror info https://example.com
+        webclone info https://example.com
     """
     import aiohttp
     from bs4 import BeautifulSoup

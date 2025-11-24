@@ -1,6 +1,6 @@
 # 🔐 Authentication & Anti-Bot Detection Guide
 
-This guide explains how WebMirror handles authentication challenges and bypasses bot detection systems.
+This guide explains how WebClone handles authentication challenges and bypasses bot detection systems.
 
 ## 🎯 Problem Overview
 
@@ -11,13 +11,13 @@ Modern websites (especially Google, Facebook, LinkedIn, etc.) employ sophisticat
 - **Rate Limiting** - Too many requests from the same IP
 - **CAPTCHA Challenges** - Human verification systems
 
-WebMirror includes multiple strategies to handle these challenges.
+WebClone includes multiple strategies to handle these challenges.
 
 ---
 
 ## ✨ Built-in Stealth Features
 
-WebMirror automatically enables stealth mode when you use the Selenium service:
+WebClone automatically enables stealth mode when you use the Selenium service:
 
 ### 🛡️ What's Included
 
@@ -30,8 +30,8 @@ WebMirror automatically enables stealth mode when you use the Selenium service:
 ### 📋 Automatic Fixes
 
 ```python
-from webmirror.services import SeleniumService
-from webmirror.models.config import SeleniumConfig
+from webclone.services import SeleniumService
+from webclone.models.config import SeleniumConfig
 
 # Stealth mode is enabled by default!
 config = SeleniumConfig(headless=False)  # Set False to see browser
@@ -52,8 +52,8 @@ service.navigate_to("https://google.com")
 
 ```python
 from pathlib import Path
-from webmirror.services import SeleniumService
-from webmirror.models.config import SeleniumConfig
+from webclone.services import SeleniumService
+from webclone.models.config import SeleniumConfig
 
 # Create service with visible browser
 config = SeleniumConfig(headless=False)
@@ -72,8 +72,8 @@ service.manual_login_session(
 
 ```python
 from pathlib import Path
-from webmirror.services import SeleniumService
-from webmirror.models.config import SeleniumConfig
+from webclone.services import SeleniumService
+from webclone.models.config import SeleniumConfig
 
 config = SeleniumConfig(headless=True)  # Now can be headless!
 service = SeleniumService(config)
@@ -91,11 +91,11 @@ service.navigate_to("https://accounts.google.com")  # Now authenticated!
 
 ## 🔧 Method 2: Automatic Block Detection
 
-WebMirror can detect and attempt to bypass authentication blocks:
+WebClone can detect and attempt to bypass authentication blocks:
 
 ```python
-from webmirror.services import SeleniumService
-from webmirror.models.config import SeleniumConfig
+from webclone.services import SeleniumService
+from webclone.models.config import SeleniumConfig
 
 config = SeleniumConfig(headless=False)
 service = SeleniumService(config)
@@ -136,11 +136,11 @@ if service.check_rate_limit():
 
 ## 🎭 Method 4: Using Residential Proxies
 
-For maximum stealth, combine WebMirror with residential proxies:
+For maximum stealth, combine WebClone with residential proxies:
 
 ```python
 from selenium.webdriver.chrome.options import Options
-from webmirror.models.config import SeleniumConfig
+from webclone.models.config import SeleniumConfig
 
 config = SeleniumConfig(headless=True)
 service = SeleniumService(config)
@@ -165,8 +165,8 @@ service.start_driver()
 ```bash
 # 1. Run interactive login
 python -c "
-from webmirror.services import SeleniumService
-from webmirror.models.config import SeleniumConfig
+from webclone.services import SeleniumService
+from webclone.models.config import SeleniumConfig
 from pathlib import Path
 
 service = SeleniumService(SeleniumConfig(headless=False))
@@ -179,7 +179,7 @@ service.manual_login_session('https://accounts.google.com', Path('cookies/google
 
 ### Error: GCM/FCM Registration Errors
 
-**Solution**: Already fixed! WebMirror disables these services:
+**Solution**: Already fixed! WebClone disables these services:
 
 ```
 ✅ --disable-features=GoogleServices
@@ -195,7 +195,7 @@ These arguments are automatically applied.
 **Solution**: Increase delays in configuration
 
 ```python
-from webmirror.models.config import CrawlConfig
+from webclone.models.config import CrawlConfig
 
 config = CrawlConfig(
     start_url="https://example.com",
@@ -299,4 +299,4 @@ service.driver.execute_cdp_cmd(
 **Author**: Ruslan Magana
 **Website**: [ruslanmv.com](https://ruslanmv.com)
 
-Need help? Open an issue on [GitHub](https://github.com/ruslanmv/webmirror/issues)!
+Need help? Open an issue on [GitHub](https://github.com/ruslanmv/webclone/issues)!

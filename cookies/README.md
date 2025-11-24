@@ -1,10 +1,10 @@
 # 🍪 Cookies Directory
 
-This directory stores authenticated session cookies for WebMirror.
+This directory stores authenticated session cookies for WebClone.
 
 ## What Are These Files?
 
-When you log in to a website using WebMirror's Authentication Manager, your session cookies are saved here as JSON files. These cookies allow WebMirror to access the site as if you're logged in, without requiring you to log in again each time.
+When you log in to a website using WebClone's Authentication Manager, your session cookies are saved here as JSON files. These cookies allow WebClone to access the site as if you're logged in, without requiring you to log in again each time.
 
 ## File Format
 
@@ -56,7 +56,7 @@ Session cookies expire based on the website's policy:
 Signs your cookies expired:
 - Site shows login page
 - "Authentication failed" errors
-- WebMirror can't access protected content
+- WebClone can't access protected content
 
 ## Best Practices
 

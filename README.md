@@ -1,4 +1,4 @@
-# 🚀 WebMirror
+# 🚀 WebClone
 
 <div align="center">
 
@@ -19,14 +19,14 @@
 
 Traditional website cloners are **slow**, **blocking**, and **fragile**. They download one resource at a time, freeze on JavaScript-heavy sites, and produce incomplete mirrors.
 
-**WebMirror** is different. Built from the ground up with modern Python async/await, it:
+**WebClone** is different. Built from the ground up with modern Python async/await, it:
 - ⚡ **Clones 10-100x faster** with concurrent downloads
 - 🎭 **Handles dynamic SPAs** using Selenium for JavaScript rendering
 - 🎨 **Delivers beautiful CLI experience** with real-time progress and colored output
 - 🏗️ **Follows Clean Architecture** with type-safe, production-grade code
 - 🐳 **Ships production-ready** with Docker, full test coverage, and CI/CD
 
-Whether you're archiving websites, conducting competitive research, or building training datasets, **WebMirror** is the definitive solution.
+Whether you're archiving websites, conducting competitive research, or building training datasets, **WebClone** is the definitive solution.
 
 ---
 
@@ -84,14 +84,14 @@ Whether you're archiving websites, conducting competitive research, or building 
 ```bash
 # Using uv (recommended - blazingly fast!)
 curl -LsSf https://astral.sh/uv/install.sh | sh
-uv pip install webmirror
+uv pip install webclone
 
 # Or using pip
-pip install webmirror
+pip install webclone
 
 # Or from source
-git clone https://github.com/ruslanmv/webmirror.git
-cd webmirror
+git clone https://github.com/ruslanmv/webclone.git
+cd webclone
 make install
 ```
 
@@ -99,21 +99,21 @@ make install
 
 ```bash
 # Clone a website
-webmirror clone https://example.com
+webclone clone https://example.com
 
 # With custom settings
-webmirror clone https://example.com \
+webclone clone https://example.com \
   --output ./my_mirror \
   --workers 10 \
   --max-pages 100 \
   --recursive
 ```
 
-That's it! Watch as WebMirror downloads your site at lightning speed with beautiful progress bars.
+That's it! Watch as WebClone downloads your site at lightning speed with beautiful progress bars.
 
 ### 🎨 Enterprise Desktop GUI (NEW!)
 
-WebMirror now includes a professional, native desktop interface built with modern Tkinter for superior performance:
+WebClone now includes a professional, native desktop interface built with modern Tkinter for superior performance:
 
 ```bash
 # Install with GUI support
@@ -138,11 +138,11 @@ make gui
 ✅ No port conflicts
 ✅ Offline-friendly
 
-![WebMirror Enterprise GUI](https://via.placeholder.com/800x450?text=WebMirror+Enterprise+Desktop+GUI)
+![WebClone Enterprise GUI](https://via.placeholder.com/800x450?text=WebClone+Enterprise+Desktop+GUI)
 
 ### 🤖 MCP Server for AI Agents (NEW!)
 
-WebMirror is now an **official Model Context Protocol (MCP) server**, making website cloning available to AI agents like Claude, CrewAI, and any MCP-compatible framework!
+WebClone is now an **official Model Context Protocol (MCP) server**, making website cloning available to AI agents like Claude, CrewAI, and any MCP-compatible framework!
 
 ```bash
 # Install MCP server
@@ -152,9 +152,9 @@ make install-mcp
 # ~/.config/claude/claude_desktop_config.json
 {
   "mcpServers": {
-    "webmirror": {
+    "webclone": {
       "command": "python",
-      "args": ["/path/to/webmirror/webmirror-mcp.py"]
+      "args": ["/path/to/webclone/webclone-mcp.py"]
     }
   }
 }
@@ -172,7 +172,7 @@ make install-mcp
 You: Clone the FastAPI documentation website
 
 Claude: I'll clone that for you.
-[Uses WebMirror MCP tool]
+[Uses WebClone MCP tool]
 
 ✅ Cloned 127 pages, 543 assets, 45.2 MB total!
 ```
@@ -191,7 +191,7 @@ Claude: I'll clone that for you.
 
 ### Interface Options
 
-WebMirror offers four ways to use it:
+WebClone offers four ways to use it:
 
 1. **🎨 Desktop GUI** (Easiest - Enterprise Edition)
    ```bash
@@ -215,7 +215,7 @@ WebMirror offers four ways to use it:
 
 3. **💻 Command Line** (Most Powerful)
    ```bash
-   webmirror clone https://example.com
+   webclone clone https://example.com
    ```
    - Automation and scripting
    - CI/CD pipelines
@@ -224,7 +224,7 @@ WebMirror offers four ways to use it:
 
 4. **🐍 Python API** (Most Flexible)
    ```python
-   from webmirror.core import AsyncCrawler
+   from webclone.core import AsyncCrawler
    # ... your code
    ```
    - Custom integrations
@@ -235,19 +235,19 @@ WebMirror offers four ways to use it:
 
 ```bash
 # Show help
-webmirror --help
+webclone --help
 
 # Clone a website
-webmirror clone <URL> [OPTIONS]
+webclone clone <URL> [OPTIONS]
 
 # Analyze a page without downloading
-webmirror info <URL>
+webclone info <URL>
 ```
 
 ### Advanced Options
 
 ```bash
-webmirror clone https://example.com \
+webclone clone https://example.com \
   --output ./mirror           # Output directory (default: website_mirror)
   --workers 10                # Concurrent workers (default: 5)
   --max-pages 100            # Maximum pages to crawl (0 = unlimited)
@@ -264,21 +264,21 @@ webmirror clone https://example.com \
 
 ```bash
 # Archive a news site (limit pages to avoid overload)
-webmirror clone https://news.example.com --max-pages 50 --workers 5
+webclone clone https://news.example.com --max-pages 50 --workers 5
 
 # Clone a documentation site recursively
-webmirror clone https://docs.example.com --recursive --max-depth 5
+webclone clone https://docs.example.com --recursive --max-depth 5
 
 # Fast clone with maximum parallelism
-webmirror clone https://example.com --workers 20 --delay 0
+webclone clone https://example.com --workers 20 --delay 0
 
 # Production mode with JSON logs
-webmirror clone https://example.com --json-logs --output /var/data/mirror
+webclone clone https://example.com --json-logs --output /var/data/mirror
 ```
 
 ### 🔐 Authentication & Stealth Examples
 
-WebMirror includes advanced features to handle authentication and bypass bot detection:
+WebClone includes advanced features to handle authentication and bypass bot detection:
 
 ```bash
 # Run interactive authentication examples
@@ -298,8 +298,8 @@ python examples/authenticated_crawl.py
 
 ```python
 from pathlib import Path
-from webmirror.services import SeleniumService
-from webmirror.models.config import SeleniumConfig
+from webclone.services import SeleniumService
+from webclone.models.config import SeleniumConfig
 
 # Manual login and save session
 config = SeleniumConfig(headless=False)
@@ -331,22 +331,22 @@ See [Authentication Guide](docs/AUTHENTICATION_GUIDE.md) for detailed instructio
 
 ## 🐳 Docker
 
-Run WebMirror in a containerized environment:
+Run WebClone in a containerized environment:
 
 ```bash
 # Build the image
 make docker-build
 
 # Or manually
-docker build -t webmirror:latest .
+docker build -t webclone:latest .
 
 # Run a clone
-docker run --rm -v $(pwd)/output:/data webmirror:latest \
+docker run --rm -v $(pwd)/output:/data webclone:latest \
   clone https://example.com --max-pages 10
 
 # Interactive shell
 docker run --rm -it -v $(pwd)/output:/data \
-  --entrypoint /bin/bash webmirror:latest
+  --entrypoint /bin/bash webclone:latest
 ```
 
 ### Docker Compose Example
@@ -354,23 +354,23 @@ docker run --rm -it -v $(pwd)/output:/data \
 ```yaml
 version: '3.8'
 services:
-  webmirror:
-    image: webmirror:latest
+  webclone:
+    image: webclone:latest
     volumes:
       - ./output:/data
     command: clone https://example.com --workers 10
     environment:
-      - WEBMIRROR_MAX_PAGES=100
+      - WEBCLONE_MAX_PAGES=100
 ```
 
 ---
 
 ## 🏗️ Architecture
 
-WebMirror follows **Clean Architecture** principles:
+WebClone follows **Clean Architecture** principles:
 
 ```
-src/webmirror/
+src/webclone/
 ├── cli.py              # Typer CLI interface
 ├── core/               # Core business logic
 │   ├── crawler.py      # Async web crawler
@@ -401,8 +401,8 @@ src/webmirror/
 
 ```bash
 # Clone the repository
-git clone https://github.com/ruslanmv/webmirror.git
-cd webmirror
+git clone https://github.com/ruslanmv/webclone.git
+cd webclone
 
 # Install with dev dependencies
 make dev
@@ -468,7 +468,7 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 
 Tested on a standard 4-core machine with 100 Mbps connection:
 
-| Website Type | Pages | Assets | Time (WebMirror) | Time (wget) | Speedup |
+| Website Type | Pages | Assets | Time (WebClone) | Time (wget) | Speedup |
 |--------------|-------|--------|------------------|-------------|---------|
 | Static Site  | 50    | 200    | 8s              | 45s         | **5.6x** |
 | Blog         | 100   | 500    | 25s             | 3m 20s      | **8.0x** |
@@ -496,9 +496,9 @@ This project is licensed under the **Apache License 2.0** - see the [LICENSE](LI
 
 ## 🌟 Star History
 
-If you find WebMirror useful, please consider giving it a star! ⭐
+If you find WebClone useful, please consider giving it a star! ⭐
 
-[![Star History Chart](https://api.star-history.com/svg?repos=ruslanmv/webmirror&type=Date)](https://star-history.com/#ruslanmv/webmirror&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=ruslanmv/webclone&type=Date)](https://star-history.com/#ruslanmv/webclone&Date)
 
 ---
 

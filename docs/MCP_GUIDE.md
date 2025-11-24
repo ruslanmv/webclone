@@ -1,14 +1,14 @@
-# 🤖 WebMirror MCP Server - Complete Guide
+# 🤖 WebClone MCP Server - Complete Guide
 
 ## Overview
 
-WebMirror is now available as an **official Model Context Protocol (MCP) server**, making website cloning and file downloading capabilities available to AI agents like Claude, CrewAI, and any MCP-compatible framework.
+WebClone is now available as an **official Model Context Protocol (MCP) server**, making website cloning and file downloading capabilities available to AI agents like Claude, CrewAI, and any MCP-compatible framework.
 
 ---
 
 ## What is MCP?
 
-**Model Context Protocol (MCP)** is an open standard that lets AI agents use external tools and services. By running WebMirror as an MCP server, AI assistants can:
+**Model Context Protocol (MCP)** is an open standard that lets AI agents use external tools and services. By running WebClone as an MCP server, AI assistants can:
 
 - Clone entire websites
 - Download specific files or URLs
@@ -23,7 +23,7 @@ WebMirror is now available as an **official Model Context Protocol (MCP) server*
 ### Installation
 
 ```bash
-# Install WebMirror with MCP support
+# Install WebClone with MCP support
 make install-mcp
 
 # Or manually
@@ -37,12 +37,12 @@ pip install -e ".[mcp]"
 make mcp
 
 # Or directly
-python webmirror-mcp.py
+python webclone-mcp.py
 ```
 
 ### Integration with Claude Desktop
 
-1. **Install WebMirror MCP**:
+1. **Install WebClone MCP**:
    ```bash
    make install-mcp
    ```
@@ -54,15 +54,15 @@ python webmirror-mcp.py
    ```json
    {
      "mcpServers": {
-       "webmirror": {
+       "webclone": {
          "command": "python",
-         "args": ["/absolute/path/to/webmirror/webmirror-mcp.py"]
+         "args": ["/absolute/path/to/webclone/webclone-mcp.py"]
        }
      }
    }
    ```
 
-   Replace `/absolute/path/to/webmirror/` with your actual path.
+   Replace `/absolute/path/to/webclone/` with your actual path.
 
 3. **Restart Claude Desktop**
 
@@ -71,7 +71,7 @@ python webmirror-mcp.py
    Ask Claude:
    > "What tools do you have access to?"
 
-   Claude should mention WebMirror tools like `clone_website`, `download_file`, etc.
+   Claude should mention WebClone tools like `clone_website`, `download_file`, etc.
 
 ---
 
@@ -303,9 +303,9 @@ Done! Cloned 52 pages with 178 assets.
 from crewai import Agent, Task, Crew
 from langchain.tools import Tool
 
-# Define WebMirror tool for CrewAI
+# Define WebClone tool for CrewAI
 webmirror_tool = Tool(
-    name="WebMirror Clone Website",
+    name="WebClone Clone Website",
     func=lambda url: mcp_client.call_tool("clone_website", {"url": url}),
     description="Clone entire websites for offline access or data extraction"
 )
@@ -341,7 +341,7 @@ from langchain.chat_models import ChatOpenAI
 
 # MCP tool wrapper
 def clone_website_langchain(url: str) -> str:
-    """Clone a website using WebMirror MCP."""
+    """Clone a website using WebClone MCP."""
     result = mcp_client.call_tool("clone_website", {"url": url})
     return str(result)
 
@@ -375,8 +375,8 @@ from mcp.client import Client
 
 async def use_webmirror():
     async with Client() as client:
-        # Connect to WebMirror MCP server
-        await client.connect("python", ["webmirror-mcp.py"])
+        # Connect to WebClone MCP server
+        await client.connect("python", ["webclone-mcp.py"])
 
         # List available tools
         tools = await client.list_tools()
@@ -401,11 +401,11 @@ asyncio.run(use_webmirror())
 Create `.env` file:
 
 ```bash
-# WebMirror MCP Configuration
-WEBMIRROR_DEFAULT_OUTPUT_DIR=./website_mirror
-WEBMIRROR_DEFAULT_WORKERS=5
-WEBMIRROR_DEFAULT_DELAY_MS=100
-WEBMIRROR_COOKIES_DIR=./cookies
+# WebClone MCP Configuration
+WEBCLONE_DEFAULT_OUTPUT_DIR=./website_mirror
+WEBCLONE_DEFAULT_WORKERS=5
+WEBCLONE_DEFAULT_DELAY_MS=100
+WEBCLONE_COOKIES_DIR=./cookies
 ```
 
 ### Server Configuration
@@ -413,7 +413,7 @@ WEBMIRROR_COOKIES_DIR=./cookies
 The MCP server uses stdio (standard input/output) for communication, making it compatible with any MCP client.
 
 **Server Details:**
-- **Name**: `webmirror`
+- **Name**: `webclone`
 - **Protocol**: MCP 0.9.0+
 - **Transport**: stdio
 - **Tools**: 5 (clone_website, download_file, save_authentication, list_saved_sessions, get_site_info)
@@ -478,9 +478,9 @@ python -c "import mcp; print(mcp.__version__)"
    ```json
    {
      "mcpServers": {
-       "webmirror": {
+       "webclone": {
          "command": "python",
-         "args": ["/Users/yourname/webmirror/webmirror-mcp.py"]
+         "args": ["/Users/yourname/webclone/webclone-mcp.py"]
        }
      }
    }
@@ -644,18 +644,18 @@ Executes a tool with given arguments.
 - **Claude Desktop**: https://claude.ai/desktop
 - **CrewAI Docs**: https://docs.crewai.com
 - **LangChain Tools**: https://python.langchain.com/docs/modules/agents/tools/
-- **WebMirror CLI Guide**: `docs/CLI_GUIDE.md`
-- **WebMirror GUI Guide**: `docs/GUI_GUIDE.md`
+- **WebClone CLI Guide**: `docs/CLI_GUIDE.md`
+- **WebClone GUI Guide**: `docs/GUI_GUIDE.md`
 
 ---
 
 ## 🤝 Contributing
 
-WebMirror MCP server is open source! Contributions welcome:
+WebClone MCP server is open source! Contributions welcome:
 
-1. **Report Issues**: https://github.com/ruslanmv/webmirror/issues
+1. **Report Issues**: https://github.com/ruslanmv/webclone/issues
 2. **Submit PRs**: Improvements to tools, documentation, examples
-3. **Share Use Cases**: How are you using WebMirror MCP?
+3. **Share Use Cases**: How are you using WebClone MCP?
 
 ---
 

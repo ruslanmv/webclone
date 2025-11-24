@@ -40,7 +40,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest tests/ -v --cov=src/webmirror --cov-report=xml
+          pytest tests/ -v --cov=src/webclone --cov-report=xml
 
       - name: Upload coverage
         uses: codecov/codecov-action@v3
@@ -73,8 +73,8 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build -t webmirror:latest .
+          docker build -t webclone:latest .
 
       - name: Test Docker image
         run: |
-          docker run --rm webmirror:latest --version
+          docker run --rm webclone:latest --version

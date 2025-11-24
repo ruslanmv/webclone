@@ -1,5 +1,5 @@
 """
-WebMirror - A blazingly fast, async-first website cloning engine.
+WebClone - A blazingly fast, async-first website cloning engine.
 
 Author: Ruslan Magana
 Website: ruslanmv.com

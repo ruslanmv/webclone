@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from webmirror.utils.helpers import (
+from webclone.utils.helpers import (
     calculate_checksum,
     extract_domain,
     is_same_domain,

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-WebMirror Enterprise GUI - Professional Tkinter Application
+WebClone Enterprise GUI - Professional Tkinter Application
 
 A world-class desktop interface for website cloning with:
 - Modern, enterprise-grade design
@@ -33,14 +33,14 @@ except ImportError:
     from tkinter import ttk
     print("Warning: ttkbootstrap not available, using standard tkinter")
 
-from webmirror.core.crawler import AsyncCrawler
-from webmirror.models.config import CrawlConfig, SeleniumConfig
-from webmirror.models.metadata import CrawlMetadata
-from webmirror.services.selenium_service import SeleniumService
+from webclone.core.crawler import AsyncCrawler
+from webclone.models.config import CrawlConfig, SeleniumConfig
+from webclone.models.metadata import CrawlMetadata
+from webclone.services.selenium_service import SeleniumService
 
 
-class WebMirrorGUI:
-    """Enterprise-grade Tkinter GUI for WebMirror."""
+class WebCloneGUI:
+    """Enterprise-grade Tkinter GUI for WebClone."""
 
     def __init__(self) -> None:
         """Initialize the GUI application."""
@@ -51,7 +51,7 @@ class WebMirrorGUI:
             import tkinter as tk
             self.root = tk.Tk()
 
-        self.root.title("WebMirror - Professional Website Cloning Engine")
+        self.root.title("WebClone - Professional Website Cloning Engine")
         self.root.geometry("1400x900")
         self.root.minsize(1200, 800)
 
@@ -112,7 +112,7 @@ class WebMirrorGUI:
 
         title = ttk.Label(
             logo_frame,
-            text="🌐 WebMirror",
+            text="🌐 WebClone",
             font=("Segoe UI", 20, "bold"),
             bootstyle="inverse-secondary"
         )
@@ -187,7 +187,7 @@ class WebMirrorGUI:
         # Page title
         title = ttk.Label(
             self.content_frame,
-            text="Welcome to WebMirror Enterprise",
+            text="Welcome to WebClone Enterprise",
             style="Title.TLabel"
         )
         title.pack(pady=(0, 10))
@@ -1279,7 +1279,7 @@ Troubleshooting:
 
 def main() -> None:
     """Entry point for the GUI application."""
-    app = WebMirrorGUI()
+    app = WebCloneGUI()
     app.run()
 
 

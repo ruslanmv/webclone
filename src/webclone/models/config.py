@@ -20,7 +20,7 @@ class SeleniumConfig(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_prefix="WEBMIRROR_SELENIUM_",
+        env_prefix="WEBCLONE_SELENIUM_",
         case_sensitive=False,
     )
 
@@ -71,7 +71,7 @@ class CrawlConfig(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_prefix="WEBMIRROR_",
+        env_prefix="WEBCLONE_",
         case_sensitive=False,
         env_file=".env",
         env_file_encoding="utf-8",

@@ -1,4 +1,4 @@
-# Multi-stage Dockerfile for WebMirror
+# Multi-stage Dockerfile for WebClone
 # Optimized for production with minimal size and maximum security
 
 # ============================================================================
@@ -55,9 +55,9 @@ ENV CHROME_BIN=/usr/bin/chromium
 ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
 
 # Create non-root user for security
-RUN useradd -m -u 1000 webmirror && \
+RUN useradd -m -u 1000 webclone && \
     mkdir -p /app /data && \
-    chown -R webmirror:webmirror /app /data
+    chown -R webclone:webclone /app /data
 
 # Set working directory
 WORKDIR /app
@@ -66,10 +66,10 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 
 # Copy application source
-COPY --chown=webmirror:webmirror src/ /app/src/
+COPY --chown=webclone:webclone src/ /app/src/
 
 # Switch to non-root user
-USER webmirror
+USER webclone
 
 # Set Python path
 ENV PYTHONPATH=/app
@@ -81,13 +81,13 @@ WORKDIR /data
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import webmirror; print(webmirror.__version__)" || exit 1
+    CMD python -c "import webclone; print(webclone.__version__)" || exit 1
 
 # Entry point
-ENTRYPOINT ["python", "-m", "webmirror.cli"]
+ENTRYPOINT ["python", "-m", "webclone.cli"]
 CMD ["--help"]
 
 # Metadata
 LABEL maintainer="Ruslan Magana <contact@ruslanmv.com>"
-LABEL description="WebMirror - A blazingly fast, async-first website cloning engine"
+LABEL description="WebClone - A blazingly fast, async-first website cloning engine"
 LABEL version="1.0.0"

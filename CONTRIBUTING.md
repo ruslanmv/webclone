@@ -1,6 +1,6 @@
-# Contributing to WebMirror
+# Contributing to WebClone
 
-First off, thank you for considering contributing to WebMirror! 🎉
+First off, thank you for considering contributing to WebClone! 🎉
 
 This document provides guidelines for contributing to the project. Following these guidelines helps maintain code quality and makes the contribution process smooth for everyone.
 
@@ -33,11 +33,11 @@ This project adheres to a Code of Conduct that all contributors are expected to 
 ```bash
 # 1. Fork the repository on GitHub
 # 2. Clone your fork
-git clone https://github.com/YOUR_USERNAME/webmirror.git
-cd webmirror
+git clone https://github.com/YOUR_USERNAME/webclone.git
+cd webclone
 
 # 3. Add upstream remote
-git remote add upstream https://github.com/ruslanmv/webmirror.git
+git remote add upstream https://github.com/ruslanmv/webclone.git
 
 # 4. Install development dependencies
 make dev
@@ -96,7 +96,7 @@ git commit -m "test: add tests for asset downloader"
 
 ### Python Style Guide
 
-WebMirror follows strict coding standards enforced by automated tools:
+WebClone follows strict coding standards enforced by automated tools:
 
 1. **Formatting**: Use `ruff format`
    ```bash
@@ -197,7 +197,7 @@ make coverage
 ### Writing Tests
 
 - Place tests in the `tests/` directory
-- Mirror the source structure (e.g., `tests/test_crawler.py` for `src/webmirror/core/crawler.py`)
+- Mirror the source structure (e.g., `tests/test_crawler.py` for `src/webclone/core/crawler.py`)
 - Use descriptive test names: `test_download_asset_with_invalid_url`
 - Use pytest fixtures for common setup
 - Mock external dependencies (network calls, file I/O)
@@ -206,7 +206,7 @@ Example:
 
 ```python
 import pytest
-from webmirror.core.downloader import AssetDownloader
+from webclone.core.downloader import AssetDownloader
 
 class TestAssetDownloader:
     """Tests for AssetDownloader class."""
@@ -289,7 +289,7 @@ What you expected to happen.
 **Environment:**
 - OS: [e.g., Ubuntu 22.04]
 - Python version: [e.g., 3.11.5]
-- WebMirror version: [e.g., 1.0.0]
+- WebClone version: [e.g., 1.0.0]
 
 **Additional context**
 Any other relevant information.
@@ -333,7 +333,7 @@ Contributors will be:
 - Mentioned in release notes for significant contributions
 - Given credit in documentation
 
-Thank you for contributing to WebMirror! 🚀
+Thank you for contributing to WebClone! 🚀
 
 ---
 

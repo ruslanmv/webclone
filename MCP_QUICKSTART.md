@@ -1,15 +1,15 @@
-# 🤖 WebMirror MCP Server - 2-Minute Quick Start
+# 🤖 WebClone MCP Server - 2-Minute Quick Start
 
 ## What is This?
 
-WebMirror is now an **official MCP (Model Context Protocol) server** that lets AI agents like Claude download websites and files!
+WebClone is now an **official MCP (Model Context Protocol) server** that lets AI agents like Claude download websites and files!
 
 ---
 
 ## Installation (One Time)
 
 ```bash
-# Install WebMirror with MCP support
+# Install WebClone with MCP support
 make install-mcp
 ```
 
@@ -28,15 +28,15 @@ That's it! Installation complete.
    ```json
    {
      "mcpServers": {
-       "webmirror": {
+       "webclone": {
          "command": "python",
-         "args": ["/absolute/path/to/webmirror/webmirror-mcp.py"]
+         "args": ["/absolute/path/to/webclone/webclone-mcp.py"]
        }
      }
    }
    ```
 
-   💡 Replace `/absolute/path/to/webmirror/` with your actual path!
+   💡 Replace `/absolute/path/to/webclone/` with your actual path!
 
 2. **Restart Claude Desktop**
 
@@ -47,7 +47,7 @@ That's it! Installation complete.
    Clone the FastAPI documentation website
    ```
 
-   Claude will use WebMirror to download it automatically! 🎉
+   Claude will use WebClone to download it automatically! 🎉
 
 ### Option 2: Standalone Server
 
@@ -137,7 +137,7 @@ For sites requiring login (Google Drive, GitHub, etc.):
 ```python
 from crewai import Agent, Task, Crew
 
-# WebMirror tool automatically available via MCP
+# WebClone tool automatically available via MCP
 
 researcher = Agent(
     role='Web Archiver',
@@ -159,7 +159,7 @@ result = crew.kickoff()
 
 ## Troubleshooting
 
-### Claude can't see WebMirror tools
+### Claude can't see WebClone tools
 
 1. ✅ Check config file path is correct
 2. ✅ Use **absolute** paths (not relative)
@@ -173,7 +173,7 @@ result = crew.kickoff()
 make install-mcp
 
 # Test
-python webmirror-mcp.py
+python webclone-mcp.py
 ```
 
 ### Downloads fail
@@ -215,7 +215,7 @@ Get information about https://example.com before cloning
 
 ---
 
-## What Makes WebMirror MCP Special?
+## What Makes WebClone MCP Special?
 
 ✅ **Official MCP Tool** - Designed for AI agents
 ✅ **5 Powerful Tools** - Clone, download, authenticate, inspect

@@ -10,11 +10,11 @@ import aiofiles
 import aiohttp
 from bs4 import BeautifulSoup
 
-from webmirror.core.downloader import AssetDownloader
-from webmirror.models.config import CrawlConfig
-from webmirror.models.metadata import CrawlResult, PageMetadata
-from webmirror.utils.helpers import is_same_domain, safe_filename, url_to_filepath
-from webmirror.utils.logger import get_logger
+from webclone.core.downloader import AssetDownloader
+from webclone.models.config import CrawlConfig
+from webclone.models.metadata import CrawlResult, PageMetadata
+from webclone.utils.helpers import is_same_domain, safe_filename, url_to_filepath
+from webclone.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -44,7 +44,7 @@ class AsyncCrawler:
     async def __aenter__(self) -> "AsyncCrawler":
         """Async context manager entry."""
         self.session = aiohttp.ClientSession(
-            headers={"User-Agent": self.config.selenium.user_agent or "WebMirror/1.0"}
+            headers={"User-Agent": self.config.selenium.user_agent or "WebClone/1.0"}
         )
         self.downloader = AssetDownloader(self.config, self.session)
         return self

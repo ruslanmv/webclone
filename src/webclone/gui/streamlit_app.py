@@ -1,5 +1,5 @@
 """
-Modern Streamlit Web UI for WebMirror
+Modern Streamlit Web UI for WebClone
 
 A professional, production-ready web interface for website cloning and archival.
 Features cookie-based authentication, real-time progress tracking, and beautiful design.
@@ -16,15 +16,15 @@ from typing import Optional
 import streamlit as st
 from streamlit_option_menu import option_menu
 
-from webmirror import __version__
-from webmirror.core.crawler import AsyncCrawler
-from webmirror.models.config import CrawlConfig, SeleniumConfig
-from webmirror.services.selenium_service import SeleniumService
+from webclone import __version__
+from webclone.core.crawler import AsyncCrawler
+from webclone.models.config import CrawlConfig, SeleniumConfig
+from webclone.services.selenium_service import SeleniumService
 
 
 # Page configuration
 st.set_page_config(
-    page_title="WebMirror - Professional Website Cloning",
+    page_title="WebClone - Professional Website Cloning",
     page_icon="🌐",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -99,7 +99,7 @@ def initialize_session_state() -> None:
 
 def show_header() -> None:
     """Display the application header."""
-    st.markdown('<h1 class="main-header">🌐 WebMirror</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">🌐 WebClone</h1>', unsafe_allow_html=True)
     st.markdown(
         '<p class="subtitle">Professional Website Cloning & Archival Platform</p>',
         unsafe_allow_html=True,
@@ -151,7 +151,7 @@ def page_home() -> None:
 
     st.markdown(
         """
-        ### How to Use WebMirror:
+        ### How to Use WebClone:
 
         1. **🔐 Authenticate** (Optional)
            - For sites requiring login, go to the "Authentication" tab
@@ -200,7 +200,7 @@ def page_authenticate() -> None:
         <div class="info-box">
         <strong>💡 Why Authenticate?</strong><br>
         For sites that require login (Google, Facebook, LinkedIn, etc.), you need to authenticate first.
-        WebMirror will save your session cookies and reuse them for automated crawling.
+        WebClone will save your session cookies and reuse them for automated crawling.
         </div>
         """,
         unsafe_allow_html=True,
@@ -327,7 +327,7 @@ def page_authenticate() -> None:
 
             #### How It Works:
             1. **Manual Login**: Open a real browser, log in normally
-            2. **Save Cookies**: WebMirror extracts and saves your session
+            2. **Save Cookies**: WebClone extracts and saves your session
             3. **Reuse**: Future crawls use these cookies automatically
 
             #### Security Notes:
@@ -554,7 +554,7 @@ def main() -> None:
 
     # Sidebar navigation
     with st.sidebar:
-        st.image("https://via.placeholder.com/150?text=WebMirror", width=150)
+        st.image("https://via.placeholder.com/150?text=WebClone", width=150)
 
         selected = option_menu(
             "Navigation",
@@ -569,8 +569,8 @@ def main() -> None:
             """
             ### 📚 Resources
             - [Documentation](https://ruslanmv.com)
-            - [GitHub](https://github.com/ruslanmv/webmirror)
-            - [Report Issue](https://github.com/ruslanmv/webmirror/issues)
+            - [GitHub](https://github.com/ruslanmv/webclone)
+            - [Report Issue](https://github.com/ruslanmv/webclone/issues)
             """
         )
 
