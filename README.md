@@ -43,6 +43,14 @@ Whether you're archiving websites, conducting competitive research, or building 
 - PDF snapshot generation with Chrome DevTools Protocol
 - Screenshot capture for visual archival
 
+### 🔐 **Advanced Authentication & Stealth Mode** ⭐ NEW
+- **Bypass bot detection**: Masks automation signatures (navigator.webdriver, etc.)
+- **Fix GCM/FCM errors**: Disables Google Cloud Messaging registration
+- **Cookie-based auth**: Save and reuse login sessions
+- **Handle "insecure browser" blocks**: Automatic workarounds for Google, Facebook, etc.
+- **Rate limit detection**: Smart throttling and backoff strategies
+- **Human behavior simulation**: Mouse movements and natural scrolling
+
 ### 🎨 **World-Class CLI Experience**
 - Beautiful terminal UI powered by [Rich](https://github.com/Textualize/rich)
 - Real-time progress bars with per-resource status
@@ -103,9 +111,51 @@ webmirror clone https://example.com \
 
 That's it! Watch as WebMirror downloads your site at lightning speed with beautiful progress bars.
 
+### 🎨 Professional Web GUI (NEW!)
+
+WebMirror now includes a modern, production-ready web interface for effortless usage:
+
+```bash
+# Install with GUI support
+make install-gui
+
+# Launch the web interface
+make gui
+```
+
+**The GUI opens in your browser with:**
+- 🌐 **Home Dashboard** - Overview and quick start guide
+- 🔐 **Authentication Manager** - Visual cookie-based auth workflow
+- 📥 **Crawl Configurator** - Point-and-click settings
+- 📊 **Results Analytics** - Real-time stats and visualizations
+
+**Perfect for non-technical users!** No command line required - just click, configure, and download.
+
+![WebMirror GUI Screenshot](https://via.placeholder.com/800x450?text=WebMirror+Professional+GUI)
+
 ---
 
 ## 📖 Usage
+
+### Interface Options
+
+WebMirror offers three ways to use it:
+
+1. **🎨 Web GUI** (Easiest)
+   ```bash
+   make gui
+   ```
+
+2. **💻 Command Line** (Most powerful)
+   ```bash
+   webmirror clone https://example.com
+   ```
+
+3. **🐍 Python API** (Most flexible)
+   ```python
+   from webmirror.core import AsyncCrawler
+   # ... your code
+   ```
 
 ### Basic Commands
 
@@ -151,6 +201,57 @@ webmirror clone https://example.com --workers 20 --delay 0
 # Production mode with JSON logs
 webmirror clone https://example.com --json-logs --output /var/data/mirror
 ```
+
+### 🔐 Authentication & Stealth Examples
+
+WebMirror includes advanced features to handle authentication and bypass bot detection:
+
+```bash
+# Run interactive authentication examples
+python examples/authenticated_crawl.py
+
+# Example 1: Manual login and save cookies
+# Opens browser, you log in, cookies are saved
+
+# Example 2: Use saved cookies for automation
+# Loads cookies, bypasses authentication
+
+# Example 3: Test stealth mode effectiveness
+# Visits bot detection sites to verify masking
+```
+
+**Python API for Authentication:**
+
+```python
+from pathlib import Path
+from webmirror.services import SeleniumService
+from webmirror.models.config import SeleniumConfig
+
+# Manual login and save session
+config = SeleniumConfig(headless=False)
+service = SeleniumService(config)
+service.start_driver()
+service.manual_login_session(
+    "https://accounts.google.com",
+    Path("./cookies/google.json")
+)
+
+# Later: Use saved cookies for automation
+config = SeleniumConfig(headless=True)
+service = SeleniumService(config)
+service.start_driver()
+service.navigate_to("https://google.com")
+service.load_cookies(Path("./cookies/google.json"))
+# Now authenticated!
+```
+
+**Fixes Common Issues:**
+- ✅ "Couldn't sign you in - browser may not be secure"
+- ✅ GCM/FCM registration errors
+- ✅ Navigator.webdriver detection
+- ✅ Rate limiting and CAPTCHA challenges
+
+See [Authentication Guide](docs/AUTHENTICATION_GUIDE.md) for detailed instructions.
 
 ---
 
