@@ -14,6 +14,7 @@ from bs4 import BeautifulSoup
 from webclone.core.downloader import AssetDownloader
 from webclone.models.config import CrawlConfig
 from webclone.models.metadata import CrawlResult, PageMetadata
+from webclone.services.cloudflare_bypass import CloudflareBypass, BROWSER_HEADERS
 from webclone.utils.helpers import is_same_domain, safe_filename, url_to_filepath
 from webclone.utils.logger import get_logger
 
@@ -61,9 +62,11 @@ class AsyncCrawler:
 
     async def __aenter__(self) -> "AsyncCrawler":
         """Async context manager entry."""
-        self.session = aiohttp.ClientSession(
-            headers={"User-Agent": self.config.selenium.user_agent or "WebClone/1.0"}
+        # Use comprehensive browser headers for better Cloudflare bypass
+        headers = CloudflareBypass.get_browser_headers(
+            self.config.selenium.user_agent
         )
+        self.session = aiohttp.ClientSession(headers=headers)
         self.downloader = AssetDownloader(self.config, self.session)
         return self
 

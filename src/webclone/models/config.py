@@ -17,6 +17,8 @@ class SeleniumConfig(BaseSettings):
         user_agent: Custom user agent string
         timeout: Default timeout for page loads in seconds
         no_sandbox: Disable Chrome sandbox (for Docker)
+        cloudflare_timeout: Timeout for Cloudflare challenge in seconds
+        use_stealth_mode: Enable advanced stealth mode for bot detection bypass
     """
 
     model_config = SettingsConfigDict(
@@ -28,13 +30,23 @@ class SeleniumConfig(BaseSettings):
     disable_gpu: bool = Field(default=True, description="Disable GPU acceleration")
     window_size: str = Field(default="1920,1080", description="Browser window size")
     user_agent: Optional[str] = Field(
-        default="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+        default="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         description="Custom user agent",
     )
     timeout: int = Field(default=30, ge=5, le=120, description="Page load timeout")
     no_sandbox: bool = Field(
         default=False,
         description="Disable sandbox (required for Docker)",
+    )
+    cloudflare_timeout: int = Field(
+        default=30,
+        ge=5,
+        le=120,
+        description="Timeout for Cloudflare challenge completion",
+    )
+    use_stealth_mode: bool = Field(
+        default=True,
+        description="Enable advanced stealth mode for bot detection bypass",
     )
 
     @field_validator("window_size")

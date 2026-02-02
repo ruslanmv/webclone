@@ -1,6 +1,7 @@
 """Selenium service for dynamic page rendering and SPA support."""
 
 import base64
+import random
 import time
 from pathlib import Path
 from typing import Optional
@@ -8,10 +9,18 @@ from typing import Optional
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
+
+# Try to import undetected-chromedriver for better Cloudflare bypass
+try:
+    import undetected_chromedriver as uc
+    HAS_UNDETECTED_CHROMEDRIVER = True
+except ImportError:
+    HAS_UNDETECTED_CHROMEDRIVER = False
 
 from webclone.models.config import SeleniumConfig
 from webclone.utils.helpers import safe_filename
@@ -490,16 +499,12 @@ class SeleniumService:
         if not self.driver:
             return
 
-        from selenium.webdriver.common.action_chains import ActionChains
-
         try:
             # Random mouse movements
             actions = ActionChains(self.driver)
 
             # Move to random positions
             for _ in range(3):
-                import random
-
                 x_offset = random.randint(100, 500)
                 y_offset = random.randint(100, 500)
                 actions.move_by_offset(x_offset, y_offset)
@@ -515,6 +520,156 @@ class SeleniumService:
 
         except Exception as e:
             logger.debug(f"Failed to simulate human behavior: {e}")
+
+    def _human_like_click(self, element, click_delay: float = 0.0) -> bool:
+        """Perform a human-like click on an element.
+
+        This method simulates how a real human would click:
+        1. Move mouse gradually toward the element
+        2. Add slight randomization to target position
+        3. Pause briefly before clicking (like hesitation)
+        4. Click with realistic timing
+        5. Small pause after click
+
+        Args:
+            element: WebElement to click
+            click_delay: Additional delay before clicking (seconds)
+
+        Returns:
+            True if click was successful
+        """
+        if not self.driver:
+            return False
+
+        try:
+            actions = ActionChains(self.driver)
+
+            # Get element location and size
+            location = element.location
+            size = element.size
+
+            # Calculate click position with slight randomization
+            # Don't click exact center - humans are slightly imprecise
+            center_x = location["x"] + size["width"] / 2
+            center_y = location["y"] + size["height"] / 2
+
+            # Add random offset (within element bounds)
+            offset_x = random.randint(-5, 5)
+            offset_y = random.randint(-3, 3)
+
+            target_x = center_x + offset_x
+            target_y = center_y + offset_y
+
+            # Simulate mouse movement path (not instant)
+            # Move in small steps with slight delays
+            logger.debug(f"Moving mouse to element at ({target_x}, {target_y})")
+
+            # First, move to a nearby position (simulating approach)
+            approach_x = target_x + random.randint(-20, 20)
+            approach_y = target_y + random.randint(-20, 20)
+
+            actions.move_to_element_with_offset(
+                element,
+                random.randint(-10, 10),
+                random.randint(-5, 5)
+            )
+
+            # Brief pause (human reaction time)
+            time.sleep(random.uniform(0.1, 0.3))
+
+            # Move to final position
+            actions.move_to_element(element)
+            actions.perform()
+
+            # Hesitation before click (0.1 - 0.5 seconds)
+            hesitation = random.uniform(0.1, 0.5) + click_delay
+            time.sleep(hesitation)
+
+            # Perform the click
+            actions = ActionChains(self.driver)
+            actions.click(element)
+            actions.perform()
+
+            logger.info("Human-like click performed successfully")
+
+            # Small natural pause after click
+            time.sleep(random.uniform(0.2, 0.5))
+
+            return True
+
+        except Exception as e:
+            logger.warning(f"Human-like click failed: {e}")
+            return False
+
+    def _human_like_move_and_click(
+        self,
+        target_x: int,
+        target_y: int,
+        steps: int = 10,
+    ) -> bool:
+        """Move mouse like a human and click at coordinates.
+
+        This creates a natural curved path to the target, not a straight line.
+
+        Args:
+            target_x: Target X coordinate
+            target_y: Target Y coordinate
+            steps: Number of movement steps (more = smoother)
+
+        Returns:
+            True if successful
+        """
+        if not self.driver:
+            return False
+
+        try:
+            actions = ActionChains(self.driver)
+
+            # Get current position (approximate from viewport center)
+            viewport_width = self.driver.execute_script("return window.innerWidth;")
+            viewport_height = self.driver.execute_script("return window.innerHeight;")
+
+            current_x = viewport_width // 2
+            current_y = viewport_height // 2
+
+            # Calculate movement deltas
+            delta_x = (target_x - current_x) / steps
+            delta_y = (target_y - current_y) / steps
+
+            # Move in steps with natural curve and timing
+            for i in range(steps):
+                # Add slight curve/wobble to path
+                wobble_x = random.uniform(-2, 2)
+                wobble_y = random.uniform(-2, 2)
+
+                # Ease-in-out timing (slower at start and end)
+                t = i / steps
+                ease = t * t * (3 - 2 * t)  # Smoothstep function
+
+                move_x = int(delta_x + wobble_x)
+                move_y = int(delta_y + wobble_y)
+
+                actions.move_by_offset(move_x, move_y)
+
+                # Variable timing between movements
+                delay = random.uniform(0.01, 0.05)
+                time.sleep(delay)
+
+            actions.perform()
+
+            # Pause before click
+            time.sleep(random.uniform(0.1, 0.3))
+
+            # Click
+            actions = ActionChains(self.driver)
+            actions.click()
+            actions.perform()
+
+            return True
+
+        except Exception as e:
+            logger.warning(f"Human-like move and click failed: {e}")
+            return False
 
     def check_rate_limit(self) -> bool:
         """Check if the current page shows rate limiting.
@@ -538,6 +693,628 @@ class SeleniumService:
         is_rate_limited = any(indicator in page_text for indicator in rate_limit_indicators)
 
         if is_rate_limited:
-            logger.warning("⏱️ Rate limit detected! Consider increasing delay_ms in config.")
+            logger.warning("Rate limit detected! Consider increasing delay_ms in config.")
 
         return is_rate_limited
+
+    def check_cloudflare_challenge(self) -> bool:
+        """Check if the current page shows a Cloudflare challenge.
+
+        Returns:
+            True if Cloudflare challenge detected, False otherwise
+        """
+        if not self.driver:
+            return False
+
+        page_text = self.driver.page_source.lower()
+
+        cloudflare_indicators = [
+            "checking your browser",
+            "verify you are human",
+            "just a moment",
+            "cf-challenge",
+            "cf_chl_opt",
+            "_cf_chl_tk",
+            "ray id:",
+            "attention required",
+            "challenge-platform",
+            "turnstile",
+        ]
+
+        is_cloudflare = any(indicator in page_text for indicator in cloudflare_indicators)
+
+        if is_cloudflare:
+            logger.info("Cloudflare challenge detected on page")
+
+        return is_cloudflare
+
+    def check_cloudflare_blocked(self) -> bool:
+        """Check if the request has been blocked by Cloudflare.
+
+        Returns:
+            True if blocked by Cloudflare, False otherwise
+        """
+        if not self.driver:
+            return False
+
+        page_text = self.driver.page_source.lower()
+
+        block_indicators = [
+            "access denied",
+            "error 1020",
+            "error 1015",
+            "blocked",
+            "you have been blocked",
+            "sorry, you have been blocked",
+        ]
+
+        is_blocked = any(indicator in page_text for indicator in block_indicators)
+
+        if is_blocked:
+            logger.error("Request blocked by Cloudflare!")
+
+        return is_blocked
+
+    def wait_for_cloudflare_challenge(
+        self,
+        timeout: int = 30,
+        poll_interval: float = 1.0,
+    ) -> bool:
+        """Wait for Cloudflare challenge to complete.
+
+        This method polls the page source until:
+        - The challenge indicators disappear, OR
+        - The page is blocked, OR
+        - The timeout is reached
+
+        Args:
+            timeout: Maximum seconds to wait for challenge completion
+            poll_interval: Seconds between challenge completion checks
+
+        Returns:
+            True if challenge completed successfully, False if timeout/blocked
+        """
+        if not self.driver:
+            raise RuntimeError("Driver not started")
+
+        start_time = time.time()
+        logger.info("Waiting for Cloudflare challenge to complete...")
+
+        while (time.time() - start_time) < timeout:
+            # Check if still on challenge page
+            if not self.check_cloudflare_challenge():
+                # Check if we got blocked instead
+                if self.check_cloudflare_blocked():
+                    logger.error("Request was blocked by Cloudflare")
+                    return False
+
+                elapsed = time.time() - start_time
+                logger.info(f"Cloudflare challenge completed in {elapsed:.1f}s")
+                return True
+
+            # Still on challenge page, wait and retry
+            time.sleep(poll_interval)
+
+        logger.warning(f"Cloudflare challenge timeout after {timeout}s")
+        return False
+
+    def navigate_with_cloudflare_bypass(
+        self,
+        url: str,
+        challenge_timeout: int = 30,
+    ) -> bool:
+        """Navigate to URL and handle Cloudflare challenge if present.
+
+        This is a convenience method that:
+        1. Navigates to the URL
+        2. Waits for page load
+        3. Detects and waits for Cloudflare challenge if present
+        4. Simulates human behavior to help bypass detection
+
+        Args:
+            url: URL to navigate to
+            challenge_timeout: Timeout for Cloudflare challenge
+
+        Returns:
+            True if successfully navigated (with or without challenge)
+        """
+        if not self.driver:
+            raise RuntimeError("Driver not started")
+
+        logger.info(f"Navigating with Cloudflare bypass: {url}")
+
+        # Navigate to URL
+        self.navigate_to(url)
+
+        # Wait for initial page load
+        try:
+            self.wait_for_page_load(timeout=10)
+        except Exception as e:
+            logger.debug(f"Initial page load wait: {e}")
+
+        # Check for Cloudflare challenge
+        if self.check_cloudflare_challenge():
+            logger.info("Cloudflare challenge detected, waiting...")
+
+            # Simulate human behavior while waiting
+            self._simulate_human_behavior()
+
+            # Wait for challenge to complete
+            success = self.wait_for_cloudflare_challenge(timeout=challenge_timeout)
+
+            if not success:
+                logger.error("Failed to bypass Cloudflare challenge")
+                return False
+
+        # Check if blocked
+        if self.check_cloudflare_blocked():
+            logger.error("Blocked by Cloudflare - may need different IP or manual solve")
+            return False
+
+        # Final page load wait
+        try:
+            self.wait_for_page_load(timeout=10)
+        except Exception as e:
+            logger.debug(f"Final page load wait: {e}")
+
+        logger.info("Successfully navigated past Cloudflare")
+        return True
+
+    def get_cloudflare_cookies(self) -> dict[str, str]:
+        """Get Cloudflare-related cookies from current session.
+
+        Returns:
+            Dictionary of Cloudflare cookie name -> value
+        """
+        if not self.driver:
+            return {}
+
+        try:
+            all_cookies = self.driver.get_cookies()
+            cf_cookies = {}
+
+            for cookie in all_cookies:
+                name = cookie.get("name", "")
+                # Include Cloudflare-specific cookies and session cookies
+                if any(prefix in name.lower() for prefix in ["cf", "__cf", "_cf"]):
+                    cf_cookies[name] = cookie.get("value", "")
+
+            logger.debug(f"Found {len(cf_cookies)} Cloudflare cookies")
+            return cf_cookies
+
+        except Exception as e:
+            logger.warning(f"Failed to get Cloudflare cookies: {e}")
+            return {}
+
+    def start_undetected_driver(self) -> Optional[webdriver.Chrome]:
+        """Start undetected-chromedriver for advanced Cloudflare bypass.
+
+        This uses undetected-chromedriver which is better at bypassing
+        Cloudflare Turnstile and other advanced bot detection.
+
+        Returns:
+            Chrome WebDriver instance or None if undetected-chromedriver unavailable
+        """
+        if not HAS_UNDETECTED_CHROMEDRIVER:
+            logger.warning(
+                "undetected-chromedriver not available. "
+                "Install with: pip install undetected-chromedriver"
+            )
+            return None
+
+        try:
+            options = uc.ChromeOptions()
+
+            # Basic configuration
+            if self.config.headless:
+                options.add_argument("--headless=new")
+
+            if self.config.disable_gpu:
+                options.add_argument("--disable-gpu")
+
+            if self.config.no_sandbox:
+                options.add_argument("--no-sandbox")
+                options.add_argument("--disable-dev-shm-usage")
+
+            # Set window size
+            width, height = self.config.window_size.split(",")
+            options.add_argument(f"--window-size={width},{height}")
+
+            # Disable automation detection flags
+            options.add_argument("--disable-blink-features=AutomationControlled")
+
+            # Create undetected Chrome driver
+            self.driver = uc.Chrome(options=options)
+            self.driver.set_page_load_timeout(self.config.timeout)
+
+            logger.info("Undetected Chrome driver started for Cloudflare bypass")
+            return self.driver
+
+        except Exception as e:
+            logger.error(f"Failed to start undetected driver: {e}")
+            return None
+
+    def click_cloudflare_turnstile(self, timeout: int = 30) -> bool:
+        """Click the Cloudflare Turnstile checkbox with human-like behavior.
+
+        This method:
+        1. Finds the Turnstile iframe
+        2. Locates the checkbox/verification element
+        3. Performs a human-like click with natural mouse movement
+
+        Args:
+            timeout: Maximum time to wait for Turnstile
+
+        Returns:
+            True if Turnstile was clicked successfully
+        """
+        if not self.driver:
+            raise RuntimeError("Driver not started")
+
+        try:
+            # Wait for Turnstile iframe
+            turnstile_selectors = [
+                "iframe[src*='challenges.cloudflare.com']",
+                "iframe[src*='turnstile']",
+                "iframe[src*='cloudflare']",
+                "iframe[title*='challenge']",
+                "iframe[title*='Widget']",
+                ".cf-turnstile iframe",
+                "#turnstile-wrapper iframe",
+                "div.cf-turnstile iframe",
+            ]
+
+            iframe = None
+            for selector in turnstile_selectors:
+                try:
+                    iframe = WebDriverWait(self.driver, 5).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                    )
+                    if iframe and iframe.is_displayed():
+                        logger.info(f"Found Turnstile iframe with selector: {selector}")
+                        break
+                except Exception:
+                    continue
+
+            if not iframe:
+                logger.debug("No Turnstile iframe found")
+                return False
+
+            logger.info("Turnstile detected, preparing human-like click...")
+
+            # Add natural delay before interacting (like reading the page)
+            time.sleep(random.uniform(0.5, 1.5))
+
+            # Get iframe position for click coordinates
+            iframe_location = iframe.location
+            iframe_size = iframe.size
+
+            # Calculate center of iframe (where checkbox usually is)
+            click_x = iframe_location["x"] + iframe_size["width"] // 2
+            click_y = iframe_location["y"] + iframe_size["height"] // 2
+
+            # Add slight randomization (humans don't click exact center)
+            click_x += random.randint(-10, 10)
+            click_y += random.randint(-5, 5)
+
+            logger.debug(f"Iframe at ({iframe_location['x']}, {iframe_location['y']}), "
+                        f"size ({iframe_size['width']}x{iframe_size['height']})")
+
+            # Method 1: Try clicking the iframe element directly with human-like behavior
+            clicked = False
+
+            # Scroll element into view naturally
+            self.driver.execute_script(
+                "arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});",
+                iframe
+            )
+            time.sleep(random.uniform(0.3, 0.7))
+
+            # Try human-like click on iframe
+            if self._human_like_click(iframe, click_delay=random.uniform(0.2, 0.5)):
+                clicked = True
+                logger.info("Clicked Turnstile iframe with human-like behavior")
+
+            # Method 2: If direct click didn't work, try switching to iframe
+            if not clicked:
+                try:
+                    self.driver.switch_to.frame(iframe)
+                    time.sleep(random.uniform(0.3, 0.5))
+
+                    # Find clickable elements inside iframe
+                    checkbox_selectors = [
+                        "input[type='checkbox']",
+                        ".ctp-checkbox-label",
+                        "[role='checkbox']",
+                        "label",
+                        "div[class*='checkbox']",
+                        "span[class*='checkbox']",
+                        "body",  # Sometimes the whole iframe body is clickable
+                    ]
+
+                    for selector in checkbox_selectors:
+                        try:
+                            element = WebDriverWait(self.driver, 3).until(
+                                EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                            )
+                            if element.is_displayed():
+                                if self._human_like_click(element):
+                                    clicked = True
+                                    logger.info(f"Clicked element inside iframe: {selector}")
+                                    break
+                        except Exception:
+                            continue
+
+                    # Switch back to main content
+                    self.driver.switch_to.default_content()
+
+                except Exception as e:
+                    logger.debug(f"Failed to switch to iframe: {e}")
+                    try:
+                        self.driver.switch_to.default_content()
+                    except Exception:
+                        pass
+
+            # Method 3: Use JavaScript click as last resort
+            if not clicked:
+                try:
+                    logger.debug("Trying JavaScript click on Turnstile...")
+                    self.driver.execute_script("""
+                        var iframe = document.querySelector('iframe[src*="cloudflare"], iframe[src*="turnstile"]');
+                        if (iframe) {
+                            var rect = iframe.getBoundingClientRect();
+                            var x = rect.left + rect.width / 2;
+                            var y = rect.top + rect.height / 2;
+
+                            // Dispatch mouse events
+                            var mousedown = new MouseEvent('mousedown', {
+                                bubbles: true, cancelable: true, view: window,
+                                clientX: x, clientY: y
+                            });
+                            var mouseup = new MouseEvent('mouseup', {
+                                bubbles: true, cancelable: true, view: window,
+                                clientX: x, clientY: y
+                            });
+                            var click = new MouseEvent('click', {
+                                bubbles: true, cancelable: true, view: window,
+                                clientX: x, clientY: y
+                            });
+
+                            iframe.dispatchEvent(mousedown);
+                            iframe.dispatchEvent(mouseup);
+                            iframe.dispatchEvent(click);
+                        }
+                    """)
+                    clicked = True
+                    logger.info("Dispatched JavaScript click events on Turnstile")
+                except Exception as e:
+                    logger.debug(f"JavaScript click failed: {e}")
+
+            if clicked:
+                # Wait for verification with natural timing
+                time.sleep(random.uniform(2.0, 4.0))
+                return True
+
+            return False
+
+        except Exception as e:
+            logger.warning(f"Failed to click Turnstile: {e}")
+            # Make sure we're back to main content
+            try:
+                self.driver.switch_to.default_content()
+            except Exception:
+                pass
+            return False
+
+    def bypass_cloudflare_with_click(
+        self,
+        url: str,
+        timeout: int = 60,
+        use_undetected: bool = True,
+        max_click_attempts: int = 3,
+    ) -> bool:
+        """Bypass Cloudflare by clicking the Turnstile verification like a human.
+
+        This method simulates a real human:
+        1. Uses undetected-chromedriver to avoid bot detection
+        2. Navigates to URL with natural timing
+        3. Waits like a human would (reading page)
+        4. Detects and clicks Turnstile with human-like mouse movement
+        5. Waits naturally for challenge completion
+        6. Retries with different timing if needed
+
+        Args:
+            url: URL to access
+            timeout: Maximum time to wait for verification
+            use_undetected: Use undetected-chromedriver if available
+            max_click_attempts: Maximum number of click retry attempts
+
+        Returns:
+            True if successfully bypassed Cloudflare
+
+        Example:
+            >>> service = SeleniumService(config)
+            >>> success = service.bypass_cloudflare_with_click(
+            ...     "https://grok.com/sign-in",
+            ...     timeout=60,
+            ...     use_undetected=True
+            ... )
+            >>> if success:
+            ...     service.save_cookies(Path("cookies/grok.json"))
+        """
+        # Start appropriate driver
+        if use_undetected and HAS_UNDETECTED_CHROMEDRIVER:
+            if not self.driver:
+                self.start_undetected_driver()
+        else:
+            if not self.driver:
+                self.start_driver()
+
+        if not self.driver:
+            logger.error("No driver available")
+            return False
+
+        try:
+            logger.info(f"Attempting human-like Cloudflare bypass for: {url}")
+
+            # Navigate to URL
+            self.driver.get(url)
+
+            # Wait for page to start loading (like a human waiting for page)
+            initial_wait = random.uniform(1.5, 3.0)
+            logger.debug(f"Initial wait: {initial_wait:.1f}s")
+            time.sleep(initial_wait)
+
+            # Simulate human reading the page
+            self._simulate_human_behavior()
+
+            # Check for Cloudflare challenge
+            page_source = self.driver.page_source.lower()
+
+            challenge_indicators = [
+                "verify you are human",
+                "checking your browser",
+                "just a moment",
+                "turnstile",
+                "challenge-platform",
+                "cf-chl-widget",
+            ]
+
+            if any(indicator in page_source for indicator in challenge_indicators):
+                logger.info("Cloudflare verification detected - starting human-like bypass")
+
+                click_attempts = 0
+                start_time = time.time()
+
+                while (time.time() - start_time) < timeout:
+                    # Check current page state
+                    page_source = self.driver.page_source.lower()
+
+                    # Check if challenge is complete
+                    if not any(indicator in page_source for indicator in challenge_indicators):
+                        logger.info("Cloudflare verification completed successfully!")
+                        # Additional wait to ensure cookies are set
+                        time.sleep(random.uniform(1.0, 2.0))
+                        return True
+
+                    # Check if blocked
+                    if self.check_cloudflare_blocked():
+                        logger.error("Blocked by Cloudflare - cannot bypass")
+                        return False
+
+                    # Try clicking Turnstile if we haven't exceeded attempts
+                    if click_attempts < max_click_attempts:
+                        logger.info(f"Click attempt {click_attempts + 1}/{max_click_attempts}")
+
+                        # Add variable delay between click attempts (like human retrying)
+                        if click_attempts > 0:
+                            retry_delay = random.uniform(2.0, 5.0)
+                            logger.debug(f"Waiting {retry_delay:.1f}s before retry...")
+                            time.sleep(retry_delay)
+
+                        if self.click_cloudflare_turnstile():
+                            logger.info("Turnstile clicked, waiting for verification...")
+                            click_attempts += 1
+
+                            # Wait for verification with natural timing
+                            verification_wait = random.uniform(3.0, 6.0)
+                            time.sleep(verification_wait)
+                        else:
+                            # If click failed, wait and try again
+                            time.sleep(random.uniform(1.0, 2.0))
+                            click_attempts += 1
+                    else:
+                        # Max attempts reached, just wait
+                        time.sleep(random.uniform(2.0, 4.0))
+
+                logger.warning(f"Cloudflare bypass timeout after {timeout}s")
+                return False
+
+            else:
+                # No challenge detected
+                logger.info("No Cloudflare challenge detected - page loaded successfully")
+                return True
+
+        except Exception as e:
+            logger.error(f"Cloudflare bypass failed: {e}")
+            return False
+
+    def solve_cloudflare_interactive(
+        self,
+        url: str,
+        timeout: int = 120,
+    ) -> bool:
+        """Solve Cloudflare challenge with user assistance if needed.
+
+        This method:
+        1. Tries automatic bypass first
+        2. If automatic fails, prompts user to solve manually
+        3. Waits for user to complete verification
+        4. Saves cookies for future use
+
+        Args:
+            url: URL to access
+            timeout: Maximum time to wait (includes manual solve time)
+
+        Returns:
+            True if verification completed (automatic or manual)
+        """
+        if not self.driver:
+            # Start with visible browser for potential manual interaction
+            original_headless = self.config.headless
+            self.config.headless = False
+
+            if HAS_UNDETECTED_CHROMEDRIVER:
+                self.start_undetected_driver()
+            else:
+                self.start_driver()
+
+        if not self.driver:
+            logger.error("No driver available")
+            return False
+
+        try:
+            logger.info(f"Navigating to: {url}")
+            self.driver.get(url)
+            time.sleep(2)
+
+            # Check for challenge
+            if self.check_cloudflare_challenge():
+                logger.info("Cloudflare challenge detected")
+                logger.info("Attempting automatic bypass...")
+
+                # Try automatic first
+                if self.click_cloudflare_turnstile():
+                    time.sleep(3)
+                    if not self.check_cloudflare_challenge():
+                        logger.info("Automatic bypass successful!")
+                        return True
+
+                # Automatic failed - prompt for manual
+                logger.info("")
+                logger.info("=" * 50)
+                logger.info("MANUAL VERIFICATION REQUIRED")
+                logger.info("=" * 50)
+                logger.info("Please complete the Cloudflare verification in the browser.")
+                logger.info("Click the 'Verify you are human' checkbox.")
+                logger.info(f"Waiting up to {timeout}s for completion...")
+                logger.info("")
+
+                # Wait for manual completion
+                start_time = time.time()
+                while (time.time() - start_time) < timeout:
+                    if not self.check_cloudflare_challenge():
+                        logger.info("Verification completed!")
+                        return True
+                    time.sleep(2)
+
+                logger.warning("Timeout waiting for manual verification")
+                return False
+
+            else:
+                logger.info("No challenge detected - access granted")
+                return True
+
+        except Exception as e:
+            logger.error(f"Interactive solve failed: {e}")
+            return False

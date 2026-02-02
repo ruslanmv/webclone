@@ -1,4 +1,24 @@
-requests
-beautifulsoup4
-selenium
-webdriver-manager
+# Core dependencies
+typer>=0.12.0
+rich>=13.7.0
+pydantic>=2.7.0
+pydantic-settings>=2.2.0
+aiohttp>=3.9.0
+aiofiles>=23.2.0
+beautifulsoup4>=4.12.0
+lxml>=5.1.0
+requests>=2.31.0
+
+# Browser automation
+selenium>=4.18.0
+webdriver-manager>=4.0.0
+
+# Cloudflare bypass
+cloudscraper>=1.2.71
+undetected-chromedriver>=3.5.0
+
+# GUI (optional)
+ttkbootstrap>=1.10.1
+
+# MCP Server (optional)
+mcp>=0.9.0
