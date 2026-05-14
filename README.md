@@ -189,16 +189,6 @@ make run  # verifies the CLI using the project .venv/src checkout
 ```
 
 
-### Applying Patch Files Safely
-
-If a patch was generated from a branch that may already be partly applied, `git apply --check changes.patch` can fail with messages such as `patch does not apply` or trailing-whitespace warnings. Use the helper target instead:
-
-```bash
-make check-patch PATCH=changes.patch
-make apply-patch PATCH=changes.patch
-```
-
-`check-patch` treats an already-applied patch as success, which is useful when raw `git apply --check changes.patch` fails with `patch does not apply` because the branch already contains the downloader changes. The helper strips trailing whitespace from the patch copy it checks/applies, detects patches that are already applied, and falls back to Git's three-way apply mode for small context drift.
 
 
 ### Your First Knowledge Capture
