@@ -69,16 +69,16 @@ def clone(
         "-o",
         help="Output directory",
     ),
-    recursive: bool = typer.Option(True, "--recursive/--no-recursive", "-r", help="Follow links"),
-    max_depth: int = typer.Option(0, "--max-depth", "-d", help="Maximum crawl depth (0=unlimited)"),
-    max_pages: int = typer.Option(0, "--max-pages", "-p", help="Maximum pages (0=unlimited)"),
-    workers: int = typer.Option(5, "--workers", "-w", help="Concurrent workers", min=1, max=50),
+    recursive: bool = typer.Option(False, "--recursive/--no-recursive", "-r", help="Follow links"),
+    max_depth: int = typer.Option(1, "--max-depth", "-d", help="Maximum crawl depth (0=unlimited)"),
+    max_pages: int = typer.Option(25, "--max-pages", "-p", help="Maximum pages (0=unlimited)"),
+    workers: int = typer.Option(1, "--workers", "-w", help="Concurrent workers", min=1, max=10),
     delay: int = typer.Option(
-        100,
+        2000,
         "--delay",
         help="Delay between requests (ms)",
         min=0,
-        max=5000,
+        max=60000,
     ),
     no_assets: bool = typer.Option(False, "--no-assets", help="Skip downloading assets"),
     no_pdf: bool = typer.Option(False, "--no-pdf", help="Skip PDF generation"),
@@ -109,11 +109,46 @@ def clone(
         help="Render pages with Selenium before saving HTML for authorized JavaScript previews",
     ),
     render_wait_seconds: float = typer.Option(
-        2.0,
+        10.0,
         "--render-wait",
-        help="Seconds to wait after Selenium page load before saving rendered HTML",
-        min=0.0,
-        max=30.0,
+        help="Maximum seconds to wait for rendered content",
+        min=1.0,
+        max=120.0,
+    ),
+    wait_for_selector: str | None = typer.Option(
+        None,
+        "--wait-for",
+        help="CSS selector to wait for before saving rendered HTML",
+    ),
+    click_selector: list[str] | None = typer.Option(
+        None,
+        "--click",
+        help="CSS selector to click before saving rendered HTML; can be repeated",
+    ),
+    item_selector: str = typer.Option(
+        ".qa",
+        "--item-selector",
+        help="CSS selector for structured content items",
+    ),
+    item_text_selector: str = typer.Option(
+        ".qa-question",
+        "--item-text-selector",
+        help="CSS selector for primary text inside each content item",
+    ),
+    option_selector: str = typer.Option(
+        ".qa-options label",
+        "--option-selector",
+        help="CSS selector for options/choices inside each content item",
+    ),
+    detail_selector: str = typer.Option(
+        ".qa-answerexp",
+        "--detail-selector",
+        help="CSS selector for detail/explanation blocks",
+    ),
+    label_selector: str = typer.Option(
+        ".correct-answer",
+        "--label-selector",
+        help="CSS selector for labels/tags/highlighted result markers",
     ),
     verbose: bool = typer.Option(False, "--verbose", "-V", help="Verbose output"),
     json_logs: bool = typer.Option(False, "--json-logs", help="JSON formatted logs"),
@@ -150,6 +185,13 @@ def clone(
             cookie_file=cookie_file,
             render_js=render_js,
             render_wait_seconds=render_wait_seconds,
+            wait_for_selector=wait_for_selector,
+            click_selectors=click_selector or [],
+            item_selector=item_selector,
+            item_text_selector=item_text_selector,
+            option_selector=option_selector,
+            detail_selector=detail_selector,
+            label_selector=label_selector,
         )
     except Exception as e:
         console.print(f"[bold red]❌ Configuration error:[/bold red] {e}")
@@ -177,6 +219,105 @@ def clone(
 
     except KeyboardInterrupt:
         console.print("\n[bold yellow]⚠️  Crawl interrupted by user[/bold yellow]")
+        raise typer.Exit(code=130) from None
+    except Exception as e:
+        console.print(f"\n[bold red]❌ Error:[/bold red] {e}")
+        if verbose:
+            console.print_exception()
+        raise typer.Exit(code=1) from e
+
+
+@app.command("clone-knowledge-page")
+def clone_knowledge_page(
+    url: str = typer.Argument(..., help="Authorized page URL to render and structure for RAG/knowledge-base ingestion"),
+    output: Path = typer.Option(
+        Path("website_mirror"),
+        "--output",
+        "-o",
+        help="Output directory",
+    ),
+    cookie_file: Path | None = typer.Option(
+        None,
+        "--cookie-file",
+        help="Path to authorized Selenium cookies JSON file",
+    ),
+    render_js: bool = typer.Option(
+        True,
+        "--render-js/--no-render-js",
+        help="Render with Selenium before extracting",
+    ),
+    wait_for_selector: str | None = typer.Option(
+        ".qa",
+        "--wait-for",
+        help="CSS selector to wait for before clicking/extracting structured content",
+    ),
+    click_selector: list[str] | None = typer.Option(
+        None,
+        "--click",
+        help="CSS selector to click before extracting; can be repeated",
+    ),
+    item_selector: str = typer.Option(".qa", "--item-selector"),
+    item_text_selector: str = typer.Option(".qa-question", "--item-text-selector"),
+    option_selector: str = typer.Option(".qa-options label", "--option-selector"),
+    detail_selector: str = typer.Option(".qa-answerexp", "--detail-selector"),
+    label_selector: str = typer.Option(
+        ".correct-answer",
+        "--label-selector",
+    ),
+    render_wait_seconds: float = typer.Option(10.0, "--render-wait", min=1.0, max=120.0),
+    allow_private_networks: bool = typer.Option(
+        False,
+        "--allow-private-networks",
+        help="Allow private network targets for owned lab/staging sites",
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-V", help="Verbose output"),
+    json_logs: bool = typer.Option(False, "--json-logs", help="JSON formatted logs"),
+) -> None:
+    """Render one authorized page and export structured content for RAG workflows."""
+    setup_logging(level="DEBUG" if verbose else "INFO", json_format=json_logs)
+    _display_header()
+
+    try:
+        config = CrawlConfig(
+            start_url=url,  # type: ignore[arg-type]
+            output_dir=output,
+            recursive=False,
+            max_depth=1,
+            max_pages=1,
+            workers=1,
+            delay_ms=3000,
+            include_assets=False,
+            save_pdf=False,
+            allow_private_networks=allow_private_networks,
+            cookie_file=cookie_file,
+            render_js=render_js,
+            render_wait_seconds=render_wait_seconds,
+            wait_for_selector=wait_for_selector,
+            click_selectors=click_selector or [".qa-answer-button"],
+            item_selector=item_selector,
+            item_text_selector=item_text_selector,
+            option_selector=option_selector,
+            detail_selector=detail_selector,
+            label_selector=label_selector,
+            save_structured_content=True,
+        )
+    except Exception as e:
+        console.print(f"[bold red]❌ Configuration error:[/bold red] {e}")
+        raise typer.Exit(code=1) from e
+
+    console.print("\n[bold cyan]🚀 Starting authorized rendered content capture...[/bold cyan]\n")
+    try:
+        result = asyncio.run(_run_crawler(config))
+        _display_results(result)
+        _save_reports(result, config)
+        console.print(
+            "\n[bold green]✨ Rendered content capture complete![/bold green] "
+            f"Review [cyan]{config.output_dir / 'page.rendered.html'}[/cyan], "
+            f"[cyan]{config.output_dir / 'structured_content.json'}[/cyan], and "
+            f"[cyan]{config.output_dir / 'render_debug_report.json'}[/cyan]."
+        )
+    except KeyboardInterrupt:
+        console.print("\n[bold yellow]⚠️  Capture interrupted by user[/bold yellow]")
         raise typer.Exit(code=130) from None
     except Exception as e:
         console.print(f"\n[bold red]❌ Error:[/bold red] {e}")
@@ -243,7 +384,7 @@ def audit(
         help="Allow private, loopback, link-local, and reserved hosts for owned lab targets",
     ),
 ) -> None:
-    """Run a safer single-profile download-resistance audit for an owned exam page."""
+    """Run a safer single-profile download-resistance audit for an owned content page."""
     setup_logging(level="INFO", json_format=False)
     try:
         base_url, exam_id = exam_target_from_url(exam_url)

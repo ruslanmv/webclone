@@ -81,6 +81,8 @@ except RuntimeError:
     logger.warning("ttkbootstrap found but incompatible; using standard tkinter")
 
 from webclone.core.crawler import AsyncCrawler
+from webclone.core.content_extractor import extract_content_items
+from webclone.core.rendered_fetcher import RenderedFetcher
 from webclone.models.config import CrawlConfig, SeleniumConfig
 from webclone.models.metadata import CrawlResult
 from webclone.services.selenium_service import SeleniumService
@@ -108,6 +110,9 @@ class WebCloneGUI:
         # Application state
         self.current_page = "home"
         self.crawler_thread: Optional[threading.Thread] = None
+        self.crawl_loop: Optional[asyncio.AbstractEventLoop] = None
+        self.crawl_task: Optional[asyncio.Task[None]] = None
+        self.active_crawler: Optional[AsyncCrawler] = None
         self.is_crawling = False
         self.crawl_metadata: Optional[CrawlResult] = None
         self.selenium_service: Optional[SeleniumService] = None
@@ -1036,6 +1041,33 @@ Troubleshooting:
             browse_kwargs["bootstyle"] = "secondary-outline"
         ttk.Button(output_frame, **browse_kwargs).pack(side=LEFT)
 
+        # Control buttons
+        control_frame = ttk.Frame(self.content_frame)
+        control_frame.pack(pady=20)
+
+        start_btn_kwargs: dict[str, Any] = {
+            "text": "▶️ Start Clone / Crawl",
+            "command": self._start_crawl,
+            "width": 28,
+        }
+        if USING_TTKBOOTSTRAP:
+            start_btn_kwargs["bootstyle"] = "success"
+            start_btn_kwargs["style"] = "Large.TButton"
+        self.start_crawl_btn = ttk.Button(control_frame, **start_btn_kwargs)
+        self.start_crawl_btn.pack(side=LEFT, padx=10)
+
+        stop_btn_kwargs: dict[str, Any] = {
+            "text": "⏹️ Stop Crawl",
+            "command": self._stop_crawl,
+            "width": 25,
+            "state": DISABLED,
+        }
+        if USING_TTKBOOTSTRAP:
+            stop_btn_kwargs["bootstyle"] = "danger"
+            stop_btn_kwargs["style"] = "Large.TButton"
+        self.stop_crawl_btn = ttk.Button(control_frame, **stop_btn_kwargs)
+        self.stop_crawl_btn.pack(side=LEFT, padx=10)
+
         # Advanced settings
         advanced_frame = ttk.LabelFrame(
             self.content_frame,
@@ -1051,7 +1083,7 @@ Troubleshooting:
         left_col = ttk.Frame(crawl_opts_frame)
         left_col.pack(side=LEFT, fill=BOTH, expand=YES, padx=10)
 
-        self.recursive_var = tk.BooleanVar(value=True)
+        self.recursive_var = tk.BooleanVar(value=False)
         rec_kwargs: dict[str, Any] = {
             "text": "Recursive Crawl",
             "variable": self.recursive_var,
@@ -1069,7 +1101,7 @@ Troubleshooting:
             same_kwargs["bootstyle"] = "success-round-toggle"
         ttk.Checkbutton(left_col, **same_kwargs).pack(anchor=W, pady=5)
 
-        self.include_assets_var = tk.BooleanVar(value=True)
+        self.include_assets_var = tk.BooleanVar(value=False)
         assets_kwargs: dict[str, Any] = {
             "text": "Include Assets (CSS, JS, Images)",
             "variable": self.include_assets_var,
@@ -1095,11 +1127,11 @@ Troubleshooting:
         workers_frame = ttk.Frame(right_col)
         workers_frame.pack(fill=X, pady=5)
         ttk.Label(workers_frame, text="Workers:", width=15).pack(side=LEFT)
-        self.workers_var = tk.IntVar(value=5)
+        self.workers_var = tk.IntVar(value=1)
         ttk.Spinbox(
             workers_frame,
             from_=1,
-            to=50,
+            to=10,
             textvariable=self.workers_var,
             width=10,
         ).pack(side=LEFT)
@@ -1108,12 +1140,12 @@ Troubleshooting:
         delay_frame = ttk.Frame(right_col)
         delay_frame.pack(fill=X, pady=5)
         ttk.Label(delay_frame, text="Delay (ms):", width=15).pack(side=LEFT)
-        self.delay_var = tk.IntVar(value=100)
+        self.delay_var = tk.IntVar(value=3000)
         ttk.Spinbox(
             delay_frame,
             from_=0,
-            to=5000,
-            increment=100,
+            to=60000,
+            increment=500,
             textvariable=self.delay_var,
             width=10,
         ).pack(side=LEFT)
@@ -1122,7 +1154,7 @@ Troubleshooting:
         depth_frame = ttk.Frame(right_col)
         depth_frame.pack(fill=X, pady=5)
         ttk.Label(depth_frame, text="Max Depth:", width=15).pack(side=LEFT)
-        self.max_depth_var = tk.IntVar(value=0)
+        self.max_depth_var = tk.IntVar(value=1)
         ttk.Spinbox(
             depth_frame,
             from_=0,
@@ -1139,7 +1171,7 @@ Troubleshooting:
         pages_frame = ttk.Frame(right_col)
         pages_frame.pack(fill=X, pady=5)
         ttk.Label(pages_frame, text="Max Pages:", width=15).pack(side=LEFT)
-        self.max_pages_var = tk.IntVar(value=0)
+        self.max_pages_var = tk.IntVar(value=25)
         ttk.Spinbox(
             pages_frame,
             from_=0,
@@ -1184,32 +1216,57 @@ Troubleshooting:
             refresh_cookie_kwargs["bootstyle"] = "secondary-outline"
         ttk.Button(cookie_select_frame, **refresh_cookie_kwargs).pack(side=LEFT)
 
-        # Control buttons
-        control_frame = ttk.Frame(self.content_frame)
-        control_frame.pack(pady=20)
+        # Rendered content capture options
+        render_frame = ttk.LabelFrame(
+            self.content_frame,
+            text="🧪 Rendered Content Capture",
+            padding=20,
+        )
+        render_frame.pack(fill=X, pady=10)
 
-        start_btn_kwargs: dict[str, Any] = {
-            "text": "▶️ Start Crawl",
-            "command": self._start_crawl,
-            "width": 25,
+        self.render_js_var = tk.BooleanVar(value=False)
+        render_js_kwargs: dict[str, Any] = {
+            "text": "Render with browser / JavaScript",
+            "variable": self.render_js_var,
         }
         if USING_TTKBOOTSTRAP:
-            start_btn_kwargs["bootstyle"] = "success"
-            start_btn_kwargs["style"] = "Large.TButton"
-        self.start_crawl_btn = ttk.Button(control_frame, **start_btn_kwargs)
-        self.start_crawl_btn.pack(side=LEFT, padx=10)
+            render_js_kwargs["bootstyle"] = "info-round-toggle"
+        ttk.Checkbutton(render_frame, **render_js_kwargs).pack(anchor=W, pady=5)
 
-        stop_btn_kwargs: dict[str, Any] = {
-            "text": "⏹️ Stop Crawl",
-            "command": self._stop_crawl,
-            "width": 25,
-            "state": DISABLED,
+        render_grid = ttk.Frame(render_frame)
+        render_grid.pack(fill=X, pady=5)
+
+        self.wait_for_selector_var = tk.StringVar(value=".qa")
+        self.click_selector_var = tk.StringVar(value=".qa-answer-button")
+        self.item_selector_var = tk.StringVar(value=".qa")
+        self.detail_selector_var = tk.StringVar(value=".qa-answerexp")
+        self.label_selector_var = tk.StringVar(value=".correct-answer")
+
+        render_fields = [
+            ("Wait for selector:", self.wait_for_selector_var),
+            ("Click selector:", self.click_selector_var),
+            ("Item selector:", self.item_selector_var),
+            ("Detail selector:", self.detail_selector_var),
+            ("Label selector:", self.label_selector_var),
+        ]
+        for row_index, (label, variable) in enumerate(render_fields):
+            ttk.Label(render_grid, text=label, width=18).grid(row=row_index // 2, column=(row_index % 2) * 2, sticky=W, padx=5, pady=3)
+            ttk.Entry(render_grid, textvariable=variable, width=28).grid(row=row_index // 2, column=(row_index % 2) * 2 + 1, sticky=EW, padx=5, pady=3)
+
+        self.save_structured_content_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            render_frame,
+            text="Save structured content JSON",
+            variable=self.save_structured_content_var,
+        ).pack(anchor=W, pady=5)
+
+        test_selectors_kwargs: dict[str, Any] = {
+            "text": "Test selectors",
+            "command": self._test_selectors,
         }
         if USING_TTKBOOTSTRAP:
-            stop_btn_kwargs["bootstyle"] = "danger"
-            stop_btn_kwargs["style"] = "Large.TButton"
-        self.stop_crawl_btn = ttk.Button(control_frame, **stop_btn_kwargs)
-        self.stop_crawl_btn.pack(side=LEFT, padx=10)
+            test_selectors_kwargs["bootstyle"] = "info-outline"
+        ttk.Button(render_frame, **test_selectors_kwargs).pack(anchor=W, pady=5)
 
         # Progress section
         progress_frame = ttk.LabelFrame(
@@ -1818,6 +1875,21 @@ Troubleshooting:
             messagebox.showerror("Error", "Please enter a valid URL")
             return
 
+        risky_settings = (
+            self.recursive_var.get()
+            and self.max_pages_var.get() == 0
+            and self.max_depth_var.get() == 0
+        ) or self.workers_var.get() > 1 or self.delay_var.get() < 1000
+        if risky_settings:
+            proceed = messagebox.askyesno(
+                "Rate Limit Warning",
+                "This configuration may send many requests and trigger rate limiting.\n\n"
+                "Recommended: workers=1, delay>=3000ms, max_pages<=25.\n\n"
+                "Do you want to continue?",
+            )
+            if not proceed:
+                return
+
         # Disable start button, enable stop
         self.start_crawl_btn.configure(state=DISABLED)
         self.stop_crawl_btn.configure(state=NORMAL)
@@ -1838,11 +1910,13 @@ Troubleshooting:
         self._update_progress()
 
     def _run_crawl_async(self) -> None:
-        """Run the async crawl (executed in background thread)."""
+        """Run the async crawl in a cancellable background thread."""
         logger.info("Crawler thread started")
-        
+
+        self.crawl_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.crawl_loop)
+
         try:
-            # Determine cookie file first
             cookie_file_path = None
             cookie_selection = self.cookie_file_var.get()
             if cookie_selection and cookie_selection != "None":
@@ -1850,9 +1924,13 @@ Troubleshooting:
                 if cookie_file.exists():
                     cookie_file_path = cookie_file
                     logger.info(f"Using cookie file: {cookie_file}")
-            
-            # Create config WITH cookie_file in constructor
-            logger.info("Creating crawl configuration")
+
+            click_selectors = [
+                selector.strip()
+                for selector in self.click_selector_var.get().split(",")
+                if selector.strip()
+            ]
+
             config = CrawlConfig(
                 start_url=self.crawl_url_var.get(),
                 output_dir=Path(self.output_dir_var.get()),
@@ -1864,37 +1942,78 @@ Troubleshooting:
                 save_pdf=self.generate_pdf_var.get(),
                 workers=self.workers_var.get(),
                 delay_ms=self.delay_var.get(),
-                cookie_file=cookie_file_path,  # ✅ PASS IT IN CONSTRUCTOR
+                cookie_file=cookie_file_path,
+                render_js=self.render_js_var.get(),
+                wait_for_selector=self.wait_for_selector_var.get().strip() or None,
+                click_selectors=click_selectors,
+                item_selector=self.item_selector_var.get().strip() or ".qa",
+                detail_selector=self.detail_selector_var.get().strip() or ".qa-answerexp",
+                label_selector=self.label_selector_var.get().strip()
+                or ".correct-answer",
+                save_structured_content=self.save_structured_content_var.get(),
             )
-            
+
             logger.info(f"Crawl config: {config}")
 
-            # Run crawl
-            logger.info("Starting async crawl")
-            
-            async def crawl() -> None:
+            async def crawl_runner() -> None:
                 async with AsyncCrawler(config) as crawler:
+                    self.active_crawler = crawler
                     self.crawl_metadata = await crawler.crawl()
 
-            asyncio.run(crawl())
+            self.crawl_task = self.crawl_loop.create_task(crawl_runner())
+            self.crawl_loop.run_until_complete(self.crawl_task)
+            self.root.after(0, self._on_crawl_completed)
 
-            logger.info("Crawl completed successfully")
-            self.crawl_status_var.set("✅ Crawl completed successfully!")
-            messagebox.showinfo(
-                "Success",
-                "Crawl completed! View results in the Results tab.",
-            )
-
+        except asyncio.CancelledError:
+            logger.info("Crawl cancelled by user")
+            self.root.after(0, self._on_crawl_cancelled)
         except Exception as e:
             logger.error(f"Crawl failed: {e}", exc_info=True)
-            self.crawl_status_var.set(f"❌ Error: {str(e)}")
-            messagebox.showerror("Error", f"Crawl failed:\n{str(e)}")
-
+            self.root.after(0, lambda error=e: self._on_crawl_failed(error))
         finally:
-            logger.info("Crawler thread finishing")
-            self.is_crawling = False
-            self.start_crawl_btn.configure(state=NORMAL)
-            self.stop_crawl_btn.configure(state=DISABLED)
+            self.active_crawler = None
+            self.crawl_task = None
+
+            try:
+                if self.crawl_loop and not self.crawl_loop.is_closed():
+                    pending = asyncio.all_tasks(self.crawl_loop)
+                    for task in pending:
+                        task.cancel()
+
+                    if pending:
+                        self.crawl_loop.run_until_complete(
+                            asyncio.gather(*pending, return_exceptions=True)
+                        )
+            except Exception:
+                logger.debug("Error while cleaning pending crawl tasks", exc_info=True)
+
+            if self.crawl_loop and not self.crawl_loop.is_closed():
+                self.crawl_loop.close()
+            self.crawl_loop = None
+            logger.info("Crawler thread finished")
+
+    def _on_crawl_completed(self) -> None:
+        """Handle successful crawl completion on the Tk thread."""
+        self.is_crawling = False
+        self.start_crawl_btn.configure(state=NORMAL)
+        self.stop_crawl_btn.configure(state=DISABLED)
+        self.crawl_status_var.set("✅ Crawl completed successfully!")
+        messagebox.showinfo("Success", "Crawl completed! View results in the Results tab.")
+
+    def _on_crawl_cancelled(self) -> None:
+        """Handle user-requested crawl cancellation on the Tk thread."""
+        self.is_crawling = False
+        self.start_crawl_btn.configure(state=NORMAL)
+        self.stop_crawl_btn.configure(state=DISABLED)
+        self.crawl_status_var.set("⏹️ Crawl stopped by user")
+
+    def _on_crawl_failed(self, error: Exception) -> None:
+        """Handle crawl failure on the Tk thread."""
+        self.is_crawling = False
+        self.start_crawl_btn.configure(state=NORMAL)
+        self.stop_crawl_btn.configure(state=DISABLED)
+        self.crawl_status_var.set(f"❌ Error: {str(error)}")
+        messagebox.showerror("Error", f"Crawl failed:\n{str(error)}")
 
     def _update_progress(self) -> None:
         """Update progress indicators (called periodically)."""
@@ -1912,10 +2031,66 @@ Troubleshooting:
     def _stop_crawl(self) -> None:
         """Stop the current crawl."""
         logger.info("Stopping crawl")
-        self.is_crawling = False
-        self.crawl_status_var.set("⏹️ Crawl stopped by user")
-        self.start_crawl_btn.configure(state=NORMAL)
+        self.crawl_status_var.set("⏳ Stopping crawler...")
         self.stop_crawl_btn.configure(state=DISABLED)
+
+        if self.active_crawler:
+            self.active_crawler.request_stop()
+
+        if self.crawl_loop and self.crawl_task:
+            self.crawl_loop.call_soon_threadsafe(self.crawl_task.cancel)
+        else:
+            self._on_crawl_cancelled()
+
+    def _test_selectors(self) -> None:
+        """Render the page once and report selector counts for authorized pages."""
+        url = self.crawl_url_var.get()
+        if not url or not url.startswith("http"):
+            messagebox.showerror("Error", "Please enter a valid URL before testing selectors")
+            return
+
+        cookie_file_path = None
+        cookie_selection = self.cookie_file_var.get()
+        if cookie_selection and cookie_selection != "None":
+            cookie_file = Path("./cookies") / f"{cookie_selection}.json"
+            if cookie_file.exists():
+                cookie_file_path = cookie_file
+
+        try:
+            fetcher = RenderedFetcher(SeleniumConfig(), timeout=10)
+            rendered = fetcher.render(
+                url,
+                cookie_file=cookie_file_path,
+                wait_for_selector=self.wait_for_selector_var.get().strip() or None,
+                click_selectors=[self.click_selector_var.get().strip()]
+                if self.click_selector_var.get().strip()
+                else [],
+            )
+            html = str(rendered["html"])
+            content_items = extract_content_items(
+                html,
+                item_selector=self.item_selector_var.get().strip() or ".qa",
+                detail_selector=self.detail_selector_var.get().strip() or ".qa-answerexp",
+                label_selector=self.label_selector_var.get().strip()
+                or ".correct-answer",
+            )
+            clicked_count = int(rendered.get("clicked_count") or 0)
+            detail_blocks = sum(1 for item in content_items if item["has_detail_block"])
+            labels = sum(1 for item in content_items if item["label"])
+            messagebox.showinfo(
+                "Selector Test Results",
+                "\n".join(
+                    [
+                        f"Found content items: {len(content_items)}",
+                        f"Clicked buttons: {clicked_count}",
+                        f"Found detail blocks: {detail_blocks}",
+                        f"Found labels: {labels}",
+                    ]
+                ),
+            )
+        except Exception as e:
+            logger.error(f"Selector test failed: {e}", exc_info=True)
+            messagebox.showerror("Selector Test Failed", str(e))
 
     def _export_json(self) -> None:
         """Export results as JSON."""

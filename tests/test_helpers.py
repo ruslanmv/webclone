@@ -195,3 +195,30 @@ class TestSecurityHelpers:
 
         assert is_safe is True
         assert reason == "ok"
+
+
+def test_extract_content_items() -> None:
+    """Test rendered structured content extraction with configurable selectors."""
+    from webclone.core.content_extractor import extract_content_items
+
+    html = """
+    <section class="qa">
+      <h2 class="qa-question">What is WebClone?</h2>
+      <div class="qa-options"><label>A crawler</label><label>A database</label></div>
+      <p class="correct-answer">A crawler</p>
+      <div class="qa-answerexp">It captures authorized web pages.</div>
+    </section>
+    """
+
+    items = extract_content_items(html)
+
+    assert items == [
+        {
+            "index": 1,
+            "text": "What is WebClone?",
+            "options": ["A crawler", "A database"],
+            "label": "A crawler",
+            "details": "It captures authorized web pages.",
+            "has_detail_block": True,
+        }
+    ]

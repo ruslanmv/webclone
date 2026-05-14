@@ -173,6 +173,8 @@ class SeleniumService:
             try:
                 self.driver.quit()
                 logger.info("Chrome WebDriver stopped")
+            except ConnectionRefusedError:
+                logger.info("Selenium driver already stopped")
             except Exception as e:
                 logger.warning(f"Error stopping driver: {e}")
             finally:

@@ -1,20 +1,25 @@
 """Async web crawler with intelligent queue management."""
 
 import asyncio
+import json
+import random
 import sys
 import time
 from collections import deque
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from urllib.parse import urljoin, urlparse
 
 import aiofiles
 import aiohttp
 from bs4 import BeautifulSoup
 
+from webclone.core.content_extractor import extract_content_items
 from webclone.core.downloader import AssetDownloader
+from webclone.core.rendered_fetcher import RenderedFetcher
 from webclone.models.config import CrawlConfig
 from webclone.models.metadata import CrawlResult, PageMetadata
 from webclone.security.cookies import build_cookie_jar
-from webclone.security.rendered import render_page_source
 from webclone.utils.helpers import is_same_domain, safe_filename
 from webclone.utils.logger import get_logger
 from webclone.utils.security import is_safe_http_url, normalize_url
@@ -42,8 +47,8 @@ logger = get_logger(__name__)
 class AsyncCrawler:
     """High-performance async web crawler.
 
-    This crawler implements a breadth-first search algorithm with configurable
-    concurrency, depth limits, and domain restrictions.
+    This crawler implements breadth-first crawling with bounded concurrency,
+    polite retry/backoff, duplicate URL suppression, and cooperative shutdown.
     """
 
     def __init__(self, config: CrawlConfig) -> None:
@@ -55,11 +60,15 @@ class AsyncCrawler:
         self.config = config
         self.result = CrawlResult(start_url=config.start_url)
         self.visited: set[str] = set()
+        self.queued: set[str] = set()
         self.queue: deque[tuple[str, int]] = deque()  # (url, depth)
         self.semaphore = asyncio.Semaphore(config.workers)
         self.session: aiohttp.ClientSession | None = None
         self.downloader: AssetDownloader | None = None
+        self.rendered_fetcher = RenderedFetcher(config.selenium, config.render_wait_seconds)
         self.start_time: float = 0.0
+        self.stop_requested = False
+        self.too_many_requests_count = 0
 
     async def __aenter__(self) -> "AsyncCrawler":
         """Async context manager entry."""
@@ -80,8 +89,104 @@ class AsyncCrawler:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:  # type: ignore[no-untyped-def]
         """Async context manager exit."""
+        self.request_stop()
         if self.session:
             await self.session.close()
+
+    def request_stop(self) -> None:
+        """Request cooperative crawler shutdown."""
+        self.stop_requested = True
+
+    def _parse_retry_after(self, value: str | None) -> float | None:
+        """Parse Retry-After as seconds or an HTTP date."""
+        if not value:
+            return None
+
+        value = value.strip()
+        if value.isdigit():
+            return float(value)
+
+        try:
+            retry_time = parsedate_to_datetime(value)
+            if retry_time.tzinfo is None:
+                retry_time = retry_time.replace(tzinfo=UTC)
+            now = datetime.now(UTC)
+            return max(0.0, (retry_time - now).total_seconds())
+        except Exception:
+            return None
+
+    def _backoff_delay(self, attempt: int, retry_after: str | None = None) -> float:
+        """Calculate bounded exponential backoff with jitter."""
+        header_delay = self._parse_retry_after(retry_after)
+        if header_delay is not None:
+            return min(header_delay, self.config.retry_max_delay_seconds)
+
+        exponential = self.config.retry_base_delay_seconds * (2**attempt)
+        jitter = random.uniform(0.0, 1.0)
+        return min(exponential + jitter, self.config.retry_max_delay_seconds)
+
+    async def _fetch_html(self, url: str) -> tuple[str | None, int | None]:
+        """Fetch HTML with polite retry/backoff for retryable failures."""
+        if not self.session:
+            logger.error("Session not initialized")
+            return None, None
+
+        for attempt in range(self.config.max_retries + 1):
+            if self.stop_requested:
+                return None, None
+
+            try:
+                async with self.session.get(
+                    url,
+                    timeout=aiohttp.ClientTimeout(total=self.config.selenium.timeout),
+                ) as response:
+                    status = response.status
+
+                    if status == 429:
+                        self.too_many_requests_count += 1
+                        retry_after = response.headers.get("Retry-After")
+                        delay = self._backoff_delay(attempt, retry_after)
+                        warning = (
+                            f"429 Too Many Requests for {url}. "
+                            f"Attempt {attempt + 1}/{self.config.max_retries + 1}. "
+                            f"Waiting {delay:.1f}s."
+                        )
+                        logger.warning(warning)
+                        self.result.add_error(warning)
+
+                        if self.too_many_requests_count >= self.config.stop_after_429_count:
+                            logger.warning(
+                                "Stopping crawl after too many 429 responses: %s",
+                                self.too_many_requests_count,
+                            )
+                            self.request_stop()
+                            return None, status
+
+                        if attempt >= self.config.max_retries:
+                            return None, status
+
+                        await asyncio.sleep(delay)
+                        continue
+
+                    response.raise_for_status()
+                    return await response.text(), status
+
+            except asyncio.CancelledError:
+                raise
+            except aiohttp.ClientError as exc:
+                if attempt >= self.config.max_retries:
+                    raise
+
+                delay = self._backoff_delay(attempt)
+                logger.warning(
+                    "Request failed for %s: %s. Retrying in %.1fs",
+                    url,
+                    exc,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+
+        return None, None
 
     async def crawl(self) -> CrawlResult:
         """Start the crawl operation.
@@ -99,29 +204,31 @@ class AsyncCrawler:
             f"workers={self.config.workers}"
         )
 
-        # Initialize queue with start URL
         self.queue.append((start_url, 0))
+        self.queued.add(start_url)
 
-        # Process queue
-        while self.queue:
-            # Check limits
+        while self.queue and not self.stop_requested:
             if self.config.max_pages > 0 and len(self.visited) >= self.config.max_pages:
                 logger.info(f"Reached max pages limit: {self.config.max_pages}")
                 break
 
-            # Get next batch of URLs to process
             batch_size = min(self.config.workers, len(self.queue))
             batch = [self.queue.popleft() for _ in range(batch_size)]
+            tasks = [asyncio.create_task(self._crawl_page(url, depth)) for url, depth in batch]
 
-            # Process batch concurrently
-            tasks = [self._crawl_page(url, depth) for url, depth in batch]
-            await asyncio.gather(*tasks, return_exceptions=True)
+            try:
+                await asyncio.gather(*tasks)
+            except asyncio.CancelledError:
+                logger.info("Crawler task cancelled; cancelling active page tasks")
+                self.request_stop()
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+                raise
 
-            # Apply delay
-            if self.config.delay_ms > 0:
+            if self.config.delay_ms > 0 and not self.stop_requested:
                 await asyncio.sleep(self.config.delay_ms / 1000.0)
 
-        # Finalize result
         self.result.duration_seconds = time.perf_counter() - self.start_time
         logger.info(
             f"Crawl complete: {self.result.pages_crawled} pages, "
@@ -138,83 +245,49 @@ class AsyncCrawler:
             url: Page URL to crawl
             depth: Current crawl depth
         """
-        # Skip if already visited
-        if url in self.visited:
+        if self.stop_requested or url in self.visited:
             return
 
-        # Check depth limit
         if self.config.max_depth > 0 and depth > self.config.max_depth:
             return
 
         async with self.semaphore:
+            if self.stop_requested:
+                return
             self.visited.add(url)
 
             try:
-                # Fetch page
                 start_time = time.perf_counter()
-
-                if not self.session:
-                    logger.error("Session not initialized")
-                    return
-
                 status_code = 200
+                rendered: dict[str, object] | None = None
+
                 if self.config.render_js:
-                    html = await asyncio.to_thread(
-                        render_page_source,
+                    rendered = await asyncio.to_thread(
+                        self.rendered_fetcher.render,
                         url,
-                        self.config.cookie_file,
-                        wait_seconds=self.config.render_wait_seconds,
+                        cookie_file=self.config.cookie_file,
+                        wait_for_selector=self.config.wait_for_selector,
+                        click_selectors=self.config.click_selectors,
                         allow_private_networks=self.config.allow_private_networks,
-                        selenium_config=self.config.selenium,
                     )
+                    html = str(rendered["html"])
                 else:
-                    async with self.session.get(
-                        url,
-                        timeout=aiohttp.ClientTimeout(total=self.config.selenium.timeout),
-                    ) as response:
-                        response.raise_for_status()
-                        status_code = response.status
-                        html = await response.text()
+                    html, fetched_status = await self._fetch_html(url)
+                    if html is None:
+                        return
+                    status_code = fetched_status or 200
 
                 elapsed_ms = int((time.perf_counter() - start_time) * 1000)
 
-                # Parse page
                 soup = BeautifulSoup(html, "lxml")
                 title = soup.title.string if soup.title else None
 
-                # Extract links
                 links: list[str] = []
-                if self.config.recursive:
-                    for a_tag in soup.find_all("a", href=True):
-                        href = a_tag["href"]
-                        absolute_url = normalize_url(urljoin(url, href))
-                        is_safe, reason = is_safe_http_url(
-                            absolute_url,
-                            allow_private_networks=self.config.allow_private_networks,
-                        )
-                        if not is_safe:
-                            logger.debug(f"Skipping unsafe link {absolute_url}: {reason}")
-                            continue
+                if self.config.recursive and not self.config.render_js:
+                    links = self._discover_links(soup, url, depth)
 
-                        # Check domain restriction
-                        if self.config.same_domain_only and not is_same_domain(
-                            str(self.config.start_url), absolute_url
-                        ):
-                            continue
-
-                        # Add to queue if not visited
-                        if absolute_url not in self.visited:
-                            parsed = urlparse(absolute_url)
-                            # Only follow http/https links
-                            if parsed.scheme in ("http", "https"):
-                                links.append(absolute_url)
-                                self.queue.append((absolute_url, depth + 1))
-
-                # Save HTML
                 filename = safe_filename(title or f"page_{len(self.visited)}")
                 html_path = self.config.get_pages_dir() / f"{filename}.html"
-
-                # Ensure unique filename
                 counter = 1
                 while html_path.exists():
                     html_path = self.config.get_pages_dir() / f"{filename}_{counter}.html"
@@ -223,14 +296,15 @@ class AsyncCrawler:
                 async with aiofiles.open(html_path, "w", encoding="utf-8") as f:
                     await f.write(html)
 
-                # Download assets
+                if rendered is not None and self.config.save_structured_content:
+                    await self._save_rendered_content_outputs(html, rendered)
+
                 assets = []
-                if self.downloader:
+                if self.downloader and self.config.include_assets:
                     assets = await self.downloader.extract_and_download_assets(html, url)
                     for asset in assets:
                         self.result.add_asset(asset)
 
-                # Create page metadata
                 page_metadata = PageMetadata(
                     url=url,
                     title=title,
@@ -243,16 +317,17 @@ class AsyncCrawler:
 
                 self.result.add_page(page_metadata)
 
-                # Windows-safe logging (avoid '∞' UnicodeEncodeError)
                 pages_crawled = len(self.visited)
                 max_pages = self.config.max_pages
                 max_display = max_pages if max_pages > 0 else "unlimited"
-
                 logger.info(
                     f"[{pages_crawled}/{max_display}] "
                     f"Crawled: {url} ({elapsed_ms}ms, {len(links)} links, {len(assets)} assets)"
                 )
 
+            except asyncio.CancelledError:
+                logger.info(f"Cancelled crawling: {url}")
+                raise
             except TimeoutError:
                 error = f"Timeout crawling: {url}"
                 logger.warning(error)
@@ -262,7 +337,6 @@ class AsyncCrawler:
                 logger.warning(error)
                 self.result.add_error(error)
             except OSError as e:
-                # Handle OS-level errors (e.g. file system, encoding issues)
                 error = f"OS error while crawling {url}: {e}"
                 logger.error(error, exc_info=True)
                 self.result.add_error(error)
@@ -270,3 +344,86 @@ class AsyncCrawler:
                 error = f"Unexpected error crawling {url}: {e}"
                 logger.error(error, exc_info=True)
                 self.result.add_error(error)
+
+    def _discover_links(self, soup: BeautifulSoup, url: str, depth: int) -> list[str]:
+        """Discover and enqueue de-duplicated safe links."""
+        links: list[str] = []
+        for a_tag in soup.find_all("a", href=True):
+            href = a_tag["href"]
+            absolute_url = normalize_url(urljoin(url, href))
+            is_safe, reason = is_safe_http_url(
+                absolute_url,
+                allow_private_networks=self.config.allow_private_networks,
+            )
+            if not is_safe:
+                logger.debug(f"Skipping unsafe link {absolute_url}: {reason}")
+                continue
+
+            if self.config.same_domain_only and not is_same_domain(
+                str(self.config.start_url), absolute_url
+            ):
+                continue
+
+            if absolute_url not in self.visited and absolute_url not in self.queued:
+                parsed = urlparse(absolute_url)
+                if parsed.scheme in ("http", "https"):
+                    links.append(absolute_url)
+                    self.queue.append((absolute_url, depth + 1))
+                    self.queued.add(absolute_url)
+
+        return links
+
+    async def _save_rendered_content_outputs(
+        self,
+        html: str,
+        rendered: dict[str, object],
+    ) -> None:
+        """Save rendered HTML, structured content JSON, and a debug report."""
+        content_items = extract_content_items(
+            html,
+            item_selector=self.config.item_selector,
+            item_text_selector=self.config.item_text_selector,
+            option_selector=self.config.option_selector,
+            detail_selector=self.config.detail_selector,
+            label_selector=self.config.label_selector,
+        )
+        body_text = str(rendered.get("body_text") or "")
+        login_markers = ("login", "sign in", "please log in", "register", "upgrade")
+        final_url = str(rendered.get("final_url") or "")
+        login_text_detected = any(marker in body_text.lower() for marker in login_markers)
+        auth_likely_failed = login_text_detected or any(
+            marker in final_url.lower() for marker in login_markers
+        )
+
+        report = {
+            "url": rendered.get("url"),
+            "final_url": final_url,
+            "final_url_before_clicks": rendered.get("final_url_before_clicks"),
+            "title": rendered.get("title"),
+            "clicked_count": rendered.get("clicked_count"),
+            "item_count": len(content_items),
+            "detail_block_count": sum(1 for item in content_items if item["has_detail_block"]),
+            "label_count": sum(1 for item in content_items if item["label"]),
+            "body_text_length": rendered.get("body_text_length"),
+            "auth_likely_failed": auth_likely_failed,
+            "login_text_detected": login_text_detected,
+        }
+
+        self.config.output_dir.mkdir(parents=True, exist_ok=True)
+        await asyncio.gather(
+            asyncio.to_thread(
+                (self.config.output_dir / "page.rendered.html").write_text,
+                html,
+                encoding="utf-8",
+            ),
+            asyncio.to_thread(
+                (self.config.output_dir / "structured_content.json").write_text,
+                json.dumps(content_items, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            ),
+            asyncio.to_thread(
+                (self.config.output_dir / "render_debug_report.json").write_text,
+                json.dumps(report, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            ),
+        )

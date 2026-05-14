@@ -7,50 +7,118 @@
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 [![Type checked: mypy](https://img.shields.io/badge/type%20checked-mypy-blue.svg)](http://mypy-lang.org/)
 
-**A blazingly fast, async-first website cloning engine that preserves everything.**
+**An async-first website cloning and rendered capture tool for documentation mirrors, AI knowledge bases, and enterprise RAG pipelines.**
 
-[Features](#-features) • [Quick Start](#-quick-start) • [Usage](#-usage) • [Docker](#-docker) • [Contributing](#-contributing)
+[AI Knowledge Bases](#-ai-knowledge-bases--enterprise-rag) • [Features](#-features) • [Quick Start](#-quick-start) • [Usage](#-usage) • [Docker](#-docker) • [Contributing](#-contributing)
 
 </div>
 
 ---
 
-## 🎯 The Why
+## 🎯 Why WebClone
 
-Traditional website cloners are **slow**, **blocking**, and **fragile**. They download one resource at a time, freeze on JavaScript-heavy sites, and produce incomplete mirrors.
+WebClone helps teams turn authorized websites and documentation into reproducible source material for AI systems. It can mirror static pages, render JavaScript pages when needed, and export structured content for downstream chunking, embedding, search, and RAG workflows.
 
-**WebClone** is different. Built from the ground up with modern Python async/await, it:
-- ⚡ **Clones 10-100x faster** with concurrent downloads
-- 🎭 **Handles dynamic SPAs** using Selenium for JavaScript rendering
-- 🎨 **Delivers beautiful CLI experience** with real-time progress and colored output
-- 🏗️ **Follows Clean Architecture** with type-safe, production-grade code
-- 🐳 **Ships production-ready** with Docker, full test coverage, and CI/CD
+The goal is simple: make it easier for AI assistants and chatbots to answer from trusted documentation instead of guessing.
 
-Whether you're archiving websites, conducting competitive research, or building training datasets, **WebClone** is the definitive solution.
+WebClone is designed for:
 
+- Documentation mirrors for projects, products, SDKs, and APIs
+- AI knowledge-base generation from approved public or private docs
+- Enterprise RAG ingestion pipelines that need repeatable source captures
+- Auditable archives with saved HTML, assets, metadata, and rendered outputs
+- Polite crawling with conservative defaults, retry/backoff, and explicit opt-ins
+
+---
+
+## 🧠 AI Knowledge Bases & Enterprise RAG
+
+WebClone is designed to help AI teams create high-quality, source-grounded knowledge bases from websites they own or are authorized to process.
+
+### What WebClone helps you build
+
+- **RAG corpora** from documentation sites, internal portals, product manuals, SDK references, and knowledge centers
+- **Chatbot grounding data** so assistants answer from approved documentation instead of guessing
+- **Offline mirrors** for compliance, review, audit, and reproducible AI indexing
+- **Structured content exports** from rendered pages for chunking, embedding, vector databases, and retrieval pipelines
+- **Authenticated captures** for private enterprise docs using saved browser cookies or session files
+
+### Enterprise-friendly capture flow
+
+```text
+Authorized website or docs portal
+        ↓
+WebClone polite crawler / rendered browser capture
+        ↓
+HTML mirror + assets + structured_content.json + render_debug_report.json
+        ↓
+Chunking, embeddings, vector database, search index, or RAG pipeline
+        ↓
+Grounded AI assistants, copilots, support bots, and internal chatbots
+```
+
+### One-page rendered knowledge capture
+
+Use `clone-knowledge-page` when a page must be rendered like a browser before extracting structured sections:
+
+```bash
+webclone clone-knowledge-page "https://docs.python.org/3/tutorial/index.html" \
+  --render-js \
+  --wait-for ".body" \
+  --item-selector ".body" \
+  --item-text-selector "h1" \
+  --detail-selector "p, li, pre" \
+  --output ./output/docs-knowledge-page
+```
+
+This writes:
+
+```text
+page.rendered.html          # final browser-rendered DOM
+structured_content.json     # generic item/detail/label records for ingestion
+render_debug_report.json    # counts, final URL, auth-likelihood diagnostics
+```
+
+### Documentation-site crawl for RAG
+
+For a normal documentation site, start with polite limits and expand deliberately:
+
+```bash
+webclone clone "https://docs.python.org/3/" \
+  --recursive \
+  --max-depth 2 \
+  --max-pages 100 \
+  --workers 1 \
+  --delay 3000 \
+  --output ./output/docs-mirror
+```
+
+Use the generated mirror as the reproducible source of truth for your indexing and embedding jobs.
 
 ---
 
 ## ✨ Features
 
-### 🚀 **Blazingly Fast Async Engine**
-- Concurrent downloads with configurable workers (5-50 parallel connections)
-- Intelligent queue management with depth-first and breadth-first strategies
-- Automatic retry logic with exponential backoff
+### 🚀 **Polite Async Crawl Engine**
+- Concurrent downloads with configurable workers and conservative defaults
+- Intelligent queue management with duplicate URL suppression
+- Retry logic with exponential backoff, jitter, and `Retry-After` handling
+- Stop-after-429 protections to respect target rate limits
 
-### 🎭 **Dynamic Page Rendering**
+### 🎭 **Dynamic Page Rendering & Structured Capture**
 - Full Selenium integration for JavaScript-heavy sites
-- Automated sidebar navigation for SPAs (Phoenix LiveView, React, Vue)
+- Authenticated cookie loading for authorized private documentation
+- Selector waits and configured clicks before saving the final DOM
+- Generic structured content extraction for RAG and chatbot knowledge bases
 - PDF snapshot generation with Chrome DevTools Protocol
 - Screenshot capture for visual archival
 
-### 🔐 **Advanced Authentication & Stealth Mode** ⭐ NEW
-- **Bypass bot detection**: Masks automation signatures (navigator.webdriver, etc.)
-- **Fix GCM/FCM errors**: Disables Google Cloud Messaging registration
-- **Cookie-based auth**: Save and reuse login sessions
-- **Handle "insecure browser" blocks**: Automatic workarounds for Google, Facebook, etc.
-- **Rate limit detection**: Smart throttling and backoff strategies
-- **Human behavior simulation**: Mouse movements and natural scrolling
+### 🔐 **Authentication & Responsible Browser Sessions**
+- **Cookie-based auth**: save and reuse authorized browser sessions
+- **Rendered private docs**: capture pages that require an authenticated browser session
+- **Browser configuration**: practical Selenium defaults for dynamic pages
+- **Rate-limit awareness**: retry/backoff and stop thresholds for polite operation
+- **Audit-friendly outputs**: final URL, counts, and auth-likelihood diagnostics
 
 ### 🎨 **World-Class CLI Experience**
 - Beautiful terminal UI powered by [Rich](https://github.com/Textualize/rich)
@@ -87,14 +155,14 @@ Security-oriented defaults now include:
 - **Per-asset size limits**: `--max-asset-bytes` prevents unexpectedly large assets from exhausting disk or memory.
 - **Fragment normalization**: URL fragments are stripped before crawling to reduce duplicate requests.
 
-For an isolated lab or a target you are explicitly authorized to assess on a private network, opt in deliberately:
+For an isolated lab or a private documentation server, opt in deliberately. For example, if you are running a local test site at `http://127.0.0.1:8000`:
 
 ```bash
 webclone clone http://127.0.0.1:8000 \
   --allow-private-networks \
   --max-pages 25 \
-  --workers 2 \
-  --delay 500
+  --workers 1 \
+  --delay 3000
 ```
 
 ## 🚀 Quick Start
@@ -106,7 +174,7 @@ webclone clone http://127.0.0.1:8000 \
 ### Installation
 
 ```bash
-# Using uv (recommended - blazingly fast!)
+# Using uv (recommended)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 uv pip install webclone
 
@@ -133,21 +201,31 @@ make apply-patch PATCH=changes.patch
 `check-patch` treats an already-applied patch as success, which is useful when raw `git apply --check changes.patch` fails with `patch does not apply` because the branch already contains the downloader changes. The helper strips trailing whitespace from the patch copy it checks/applies, detects patches that are already applied, and falls back to Git's three-way apply mode for small context drift.
 
 
-### Your First Clone
+### Your First Knowledge Capture
 
 ```bash
-# Clone a website
+# Clone a single page with safe defaults
 webclone clone https://example.com
 
-# With custom settings
-webclone clone https://example.com \
+# Crawl a documentation site politely for a RAG source corpus
+webclone clone https://docs.python.org/3/ \
   --output ./my_mirror \
-  --workers 10 \
+  --recursive \
+  --max-depth 2 \
   --max-pages 100 \
-  --recursive
+  --workers 1 \
+  --delay 3000
+
+# Render one authorized knowledge page and export structured JSON
+webclone clone-knowledge-page https://docs.python.org/3/tutorial/index.html \
+  --render-js \
+  --wait-for ".body" \
+  --item-selector ".body section" \
+  --item-text-selector "h1, h2" \
+  --detail-selector "p, li, pre"
 ```
 
-That's it! Watch as WebClone downloads your site at lightning speed with beautiful progress bars.
+That's it! WebClone creates reproducible mirrors and structured capture artifacts you can feed into chunking, embedding, search, and RAG pipelines.
 
 ### 🎨 Enterprise Desktop GUI (NEW!)
 
@@ -177,8 +255,6 @@ make gui
 ✅ Better OS integration (file dialogs, notifications)
 ✅ No port conflicts
 ✅ Offline-friendly
-
-![WebClone Enterprise GUI](https://via.placeholder.com/800x450?text=WebClone+Enterprise+Desktop+GUI)
 
 ### 🤖 MCP Server for AI Agents (NEW!)
 
@@ -289,81 +365,83 @@ webclone info <URL>
 ```bash
 webclone clone https://example.com \
   --output ./mirror           # Output directory (default: website_mirror)
-  --workers 10                # Concurrent workers (default: 5)
-  --max-pages 100            # Maximum pages to crawl (0 = unlimited)
-  --max-depth 3              # Maximum crawl depth (0 = unlimited)
-  --delay 100                # Delay between requests in ms
-  --no-assets                # Skip downloading CSS, JS, images
-  --no-pdf                   # Skip PDF generation
-  --all-domains              # Follow links to other domains
-  --verbose                  # Detailed logging output
-  --json-logs                # JSON-formatted logs for parsing
+  --recursive                 # Follow discovered links (default: off)
+  --workers 1                 # Concurrent workers (default: 1)
+  --max-pages 100             # Maximum pages to crawl (0 = unlimited)
+  --max-depth 3               # Maximum crawl depth (0 = unlimited)
+  --delay 3000                # Delay between requests in ms
+  --no-assets                 # Skip downloading CSS, JS, images
+  --no-pdf                    # Skip PDF generation
+  --all-domains               # Follow links to other domains
+  --verbose                   # Detailed logging output
+  --json-logs                 # JSON-formatted logs for parsing
+```
+
+For rendered knowledge-page extraction:
+
+```bash
+webclone clone-knowledge-page https://docs.python.org/3/tutorial/index.html \
+  --render-js \
+  --wait-for ".body" \
+  --item-selector ".body" \
+  --item-text-selector "h1" \
+  --detail-selector "p, li, pre" \
+  --output ./knowledge-page
 ```
 
 ### Real-World Examples
 
 ```bash
-# Archive a news site (limit pages to avoid overload)
-webclone clone https://news.example.com --max-pages 50 --workers 5
+# Archive a news site politely (limit pages to avoid overload)
+webclone clone https://www.python.org/blogs/ --recursive --max-pages 50 --workers 1 --delay 3000
 
-# Clone a documentation site recursively
-webclone clone https://docs.example.com --recursive --max-depth 5
+# Clone a documentation site recursively for a RAG source corpus
+webclone clone https://docs.python.org/3/ --recursive --max-depth 3 --max-pages 250 --delay 3000
 
-# Fast clone with maximum parallelism
-webclone clone https://example.com --workers 20 --delay 0
+# Render a JavaScript documentation page before extracting structured content
+webclone clone-knowledge-page https://docs.python.org/3/tutorial/index.html \
+  --render-js \
+  --wait-for ".body" \
+  --item-selector ".body" \
+  --item-text-selector "h1" \
+  --detail-selector "p, li, pre"
 
 # Production mode with JSON logs
 webclone clone https://example.com --json-logs --output /var/data/mirror
 ```
 
-### 🔐 Authentication & Stealth Examples
+### 🔐 Authenticated Browser Sessions
 
-WebClone includes advanced features to handle authentication and bypass bot detection:
+For private documentation that you are authorized to access, save a browser session once and reuse its cookies for later rendered captures.
 
 ```bash
-# Run interactive authentication examples
+# Run the interactive authentication examples
 python examples/authenticated_crawl.py
-
-# Example 1: Manual login and save cookies
-# Opens browser, you log in, cookies are saved
-
-# Example 2: Use saved cookies for automation
-# Loads cookies, bypasses authentication
-
-# Example 3: Test stealth mode effectiveness
-# Visits bot detection sites to verify masking
 ```
 
-**Python API for Authentication:**
+**Python API for saved sessions:**
 
 ```python
 from pathlib import Path
-from webclone.services import SeleniumService
 from webclone.models.config import SeleniumConfig
+from webclone.services import SeleniumService
 
-# Manual login and save session
+# Open a visible browser and save cookies after manual sign-in.
 config = SeleniumConfig(headless=False)
 service = SeleniumService(config)
 service.start_driver()
 service.manual_login_session(
-    "https://accounts.google.com",
-    Path("./cookies/google.json")
+    "https://example.com",
+    Path("./cookies/example.json"),
 )
 
-# Later: Use saved cookies for automation
+# Later, reuse the cookies for an authorized browser session.
 config = SeleniumConfig(headless=True)
 service = SeleniumService(config)
 service.start_driver()
-service.navigate_to("https://google.com")
-service.load_cookies(Path("./cookies/google.json"))
-# Now authenticated!
+service.navigate_to("https://example.com")
+service.load_cookies(Path("./cookies/example.json"))
 ```
-
-**Fixes Common Issues:**
-- ✅ "Couldn't sign you in - browser may not be secure"
-- ✅ GCM/FCM registration errors
-- ✅ Navigator.webdriver detection
-- ✅ Rate limiting and CAPTCHA challenges
 
 See [Authentication Guide](docs/AUTHENTICATION_GUIDE.md) for detailed instructions.
 
@@ -398,7 +476,7 @@ services:
     image: webclone:latest
     volumes:
       - ./output:/data
-    command: clone https://example.com --workers 10
+    command: clone https://example.com --max-pages 25 --workers 1 --delay 3000
     environment:
       - WEBCLONE_MAX_PAGES=100
 ```
@@ -413,8 +491,10 @@ WebClone follows **Clean Architecture** principles:
 src/webclone/
 ├── cli.py              # Typer CLI interface
 ├── core/               # Core business logic
-│   ├── crawler.py      # Async web crawler
-│   └── downloader.py   # Asset downloader
+│   ├── crawler.py           # Async web crawler
+│   ├── downloader.py        # Asset downloader
+│   ├── rendered_fetcher.py  # Selenium rendered capture
+│   └── content_extractor.py # Structured content extraction for RAG
 ├── models/             # Pydantic data models
 │   ├── config.py       # Configuration schemas
 │   └── metadata.py     # Result metadata
@@ -430,8 +510,10 @@ src/webclone/
 1. **Async-First**: All I/O operations use `asyncio` for maximum concurrency
 2. **Type Safety**: 100% type coverage with strict Mypy checks
 3. **Pydantic V2**: Data validation at system boundaries
-4. **Dependency Injection**: Services receive dependencies via constructors
-5. **Single Responsibility**: Each module has one clear purpose
+4. **Responsible crawling**: safer defaults, Retry-After handling, and explicit opt-ins for broader crawls
+5. **RAG-ready outputs**: rendered HTML plus structured JSON for downstream chunking, embeddings, and retrieval
+6. **Dependency Injection**: Services receive dependencies via constructors
+7. **Single Responsibility**: Each module has one clear purpose
 
 ---
 

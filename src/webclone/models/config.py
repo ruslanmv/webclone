@@ -88,11 +88,11 @@ class CrawlConfig(BaseSettings):
         default=Path("website_mirror"),
         description="Output directory",
     )
-    recursive: bool = Field(default=True, description="Crawl recursively")
-    max_depth: int = Field(default=0, ge=0, description="Max crawl depth (0=unlimited)")
-    max_pages: int = Field(default=0, ge=0, description="Max pages (0=unlimited)")
-    delay_ms: int = Field(default=100, ge=0, le=5000, description="Request delay (ms)")
-    workers: int = Field(default=5, ge=1, le=50, description="Concurrent workers")
+    recursive: bool = Field(default=False, description="Crawl recursively")
+    max_depth: int = Field(default=1, ge=0, description="Max crawl depth (0=unlimited)")
+    max_pages: int = Field(default=25, ge=0, description="Max pages (0=unlimited)")
+    delay_ms: int = Field(default=2000, ge=0, le=60000, description="Request delay (ms)")
+    workers: int = Field(default=1, ge=1, le=10, description="Concurrent workers")
     save_pdf: bool = Field(default=True, description="Generate PDF snapshots")
     save_screenshots: bool = Field(default=False, description="Save screenshots")
     include_assets: bool = Field(default=True, description="Download assets")
@@ -115,11 +115,77 @@ class CrawlConfig(BaseSettings):
         default=False,
         description="Render pages with Selenium before saving HTML",
     )
+    wait_for_selector: str | None = Field(
+        default=None,
+        description="CSS selector to wait for before saving rendered HTML",
+    )
+    click_selectors: list[str] = Field(
+        default_factory=list,
+        description="CSS selectors to click before saving rendered HTML",
+    )
+    item_selector: str = Field(
+        default=".qa",
+        description="CSS selector for one structured content item",
+    )
+    item_text_selector: str = Field(
+        default=".qa-question",
+        description="CSS selector for primary item text inside a content item",
+    )
+    option_selector: str = Field(
+        default=".qa-options label",
+        description="CSS selector for option/choice text inside a content item",
+    )
+    detail_selector: str = Field(
+        default=".qa-answerexp",
+        description="CSS selector for details, notes, or explanation text",
+    )
+    label_selector: str = Field(
+        default=".correct-answer",
+        description="CSS selector for label, tag, or highlighted result text",
+    )
     render_wait_seconds: float = Field(
-        default=2.0,
+        default=10.0,
+        ge=1,
+        le=120,
+        description="Maximum seconds to wait for rendered content",
+    )
+    save_structured_content: bool = Field(
+        default=True,
+        description="Save rendered page sections as structured JSON for knowledge-base ingestion",
+    )
+    max_retries: int = Field(
+        default=3,
         ge=0,
-        le=30,
-        description="Seconds to wait after Selenium page load before saving rendered HTML",
+        le=10,
+        description="Maximum retries for retryable HTTP errors",
+    )
+    retry_base_delay_seconds: float = Field(
+        default=2.0,
+        ge=0.1,
+        le=120.0,
+        description="Base delay for exponential backoff",
+    )
+    retry_max_delay_seconds: float = Field(
+        default=60.0,
+        ge=1.0,
+        le=600.0,
+        description="Maximum retry delay",
+    )
+    stop_after_429_count: int = Field(
+        default=10,
+        ge=1,
+        le=1000,
+        description="Stop crawl after this many 429 responses",
+    )
+    next_page_selector: str | None = Field(
+        default=None,
+        description="CSS selector for next page button in rendered content capture",
+    )
+    max_rendered_pages: int = Field(
+        default=1,
+        ge=1,
+        le=100,
+        description="Maximum rendered content pages to capture",
     )
 
     selenium: SeleniumConfig = Field(default_factory=SeleniumConfig)
