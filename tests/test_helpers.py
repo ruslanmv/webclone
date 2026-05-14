@@ -146,3 +146,52 @@ class TestIsSameDomain:
         url2 = "https://example.com/page"
 
         assert is_same_domain(url1, url2) is False
+
+
+class TestSecurityHelpers:
+    """Tests for safe URL validation helpers."""
+
+    def test_normalize_url_removes_fragment(self) -> None:
+        """Test URL fragment removal for stable de-duplication."""
+        from webclone.utils.security import normalize_url
+
+        assert normalize_url("https://example.com/page#section") == "https://example.com/page"
+
+    def test_safe_http_url_allows_public_https(self) -> None:
+        """Test public HTTPS URLs are allowed."""
+        from webclone.utils.security import is_safe_http_url
+
+        is_safe, reason = is_safe_http_url("https://example.com")
+
+        assert is_safe is True
+        assert reason == "ok"
+
+    def test_safe_http_url_rejects_embedded_credentials(self) -> None:
+        """Test URLs with embedded credentials are rejected."""
+        from webclone.utils.security import is_safe_http_url
+
+        is_safe, reason = is_safe_http_url("https://user:pass@example.com")
+
+        assert is_safe is False
+        assert "credentials" in reason
+
+    def test_safe_http_url_rejects_private_ip_by_default(self) -> None:
+        """Test private IP addresses are blocked by default."""
+        from webclone.utils.security import is_safe_http_url
+
+        is_safe, reason = is_safe_http_url("http://127.0.0.1:8000")
+
+        assert is_safe is False
+        assert "private" in reason
+
+    def test_safe_http_url_can_allow_private_ip_for_labs(self) -> None:
+        """Test private IP addresses can be explicitly allowed for labs."""
+        from webclone.utils.security import is_safe_http_url
+
+        is_safe, reason = is_safe_http_url(
+            "http://127.0.0.1:8000",
+            allow_private_networks=True,
+        )
+
+        assert is_safe is True
+        assert reason == "ok"

@@ -4,7 +4,6 @@ import asyncio
 import sys
 import time
 from collections import deque
-from typing import Optional
 from urllib.parse import urljoin, urlparse
 
 import aiofiles
@@ -14,8 +13,9 @@ from bs4 import BeautifulSoup
 from webclone.core.downloader import AssetDownloader
 from webclone.models.config import CrawlConfig
 from webclone.models.metadata import CrawlResult, PageMetadata
-from webclone.utils.helpers import is_same_domain, safe_filename, url_to_filepath
+from webclone.utils.helpers import is_same_domain, safe_filename
 from webclone.utils.logger import get_logger
+from webclone.utils.security import is_safe_http_url, normalize_url
 
 # Force UTF-8 encoding on Windows consoles to avoid UnicodeEncodeError
 if sys.platform == "win32":
@@ -55,8 +55,8 @@ class AsyncCrawler:
         self.visited: set[str] = set()
         self.queue: deque[tuple[str, int]] = deque()  # (url, depth)
         self.semaphore = asyncio.Semaphore(config.workers)
-        self.session: Optional[aiohttp.ClientSession] = None
-        self.downloader: Optional[AssetDownloader] = None
+        self.session: aiohttp.ClientSession | None = None
+        self.downloader: AssetDownloader | None = None
         self.start_time: float = 0.0
 
     async def __aenter__(self) -> "AsyncCrawler":
@@ -79,7 +79,7 @@ class AsyncCrawler:
             CrawlResult with complete crawl statistics and metadata
         """
         self.start_time = time.perf_counter()
-        start_url = str(self.config.start_url)
+        start_url = normalize_url(str(self.config.start_url))
 
         logger.info(f"Starting crawl of {start_url}")
         logger.info(
@@ -164,7 +164,14 @@ class AsyncCrawler:
                 if self.config.recursive:
                     for a_tag in soup.find_all("a", href=True):
                         href = a_tag["href"]
-                        absolute_url = urljoin(url, href)
+                        absolute_url = normalize_url(urljoin(url, href))
+                        is_safe, reason = is_safe_http_url(
+                            absolute_url,
+                            allow_private_networks=self.config.allow_private_networks,
+                        )
+                        if not is_safe:
+                            logger.debug(f"Skipping unsafe link {absolute_url}: {reason}")
+                            continue
 
                         # Check domain restriction
                         if self.config.same_domain_only and not is_same_domain(
@@ -225,7 +232,7 @@ class AsyncCrawler:
                     f"Crawled: {url} ({elapsed_ms}ms, {len(links)} links, {len(assets)} assets)"
                 )
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 error = f"Timeout crawling: {url}"
                 logger.warning(error)
                 self.result.add_error(error)

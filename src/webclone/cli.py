@@ -6,21 +6,19 @@ and rich formatting for an exceptional user experience.
 
 import asyncio
 import json
-import sys
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
-from rich.tree import Tree
 
 from webclone import __version__
 from webclone.core.crawler import AsyncCrawler
 from webclone.models.config import CrawlConfig
 from webclone.utils.logger import setup_logging
+from webclone.utils.security import validate_safe_http_url
 
 app = typer.Typer(
     name="webclone",
@@ -40,7 +38,7 @@ def version_callback(value: bool) -> None:
 
 @app.callback()
 def main(
-    version: Optional[bool] = typer.Option(
+    version: bool | None = typer.Option(
         None,
         "--version",
         "-v",
@@ -80,6 +78,17 @@ def clone(
         "--same-domain/--all-domains",
         help="Restrict to same domain",
     ),
+    allow_private_networks: bool = typer.Option(
+        False,
+        "--allow-private-networks",
+        help="Allow crawling private, loopback, link-local, and reserved hosts for authorized lab targets",
+    ),
+    max_asset_bytes: int = typer.Option(
+        50 * 1024 * 1024,
+        "--max-asset-bytes",
+        help="Maximum size for a single downloaded asset in bytes",
+        min=1,
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-V", help="Verbose output"),
     json_logs: bool = typer.Option(False, "--json-logs", help="JSON formatted logs"),
 ) -> None:
@@ -110,10 +119,12 @@ def clone(
             include_assets=not no_assets,
             save_pdf=not no_pdf,
             same_domain_only=same_domain,
+            allow_private_networks=allow_private_networks,
+            max_asset_bytes=max_asset_bytes,
         )
     except Exception as e:
         console.print(f"[bold red]❌ Configuration error:[/bold red] {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
     # Display configuration
     _display_config(config)
@@ -137,16 +148,23 @@ def clone(
 
     except KeyboardInterrupt:
         console.print("\n[bold yellow]⚠️  Crawl interrupted by user[/bold yellow]")
-        raise typer.Exit(code=130)
+        raise typer.Exit(code=130) from None
     except Exception as e:
         console.print(f"\n[bold red]❌ Error:[/bold red] {e}")
         if verbose:
             console.print_exception()
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @app.command()
-def info(url: str = typer.Argument(..., help="URL to analyze")) -> None:
+def info(
+    url: str = typer.Argument(..., help="URL to analyze"),
+    allow_private_networks: bool = typer.Option(
+        False,
+        "--allow-private-networks",
+        help="Allow private/local lab targets for authorized analysis",
+    ),
+) -> None:
     """📊 Show information about a URL without downloading.
 
     Example:
@@ -155,41 +173,49 @@ def info(url: str = typer.Argument(..., help="URL to analyze")) -> None:
     import aiohttp
     from bs4 import BeautifulSoup
 
-    console.print(f"\n[bold cyan]Analyzing:[/bold cyan] {url}\n")
+    try:
+        safe_url = validate_safe_http_url(
+            url,
+            allow_private_networks=allow_private_networks,
+        )
+    except ValueError as e:
+        console.print(f"[bold red]❌ Configuration error:[/bold red] {e}")
+        raise typer.Exit(code=1) from e
+
+    console.print(f"\n[bold cyan]Analyzing:[/bold cyan] {safe_url}\n")
 
     async def fetch_info() -> None:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as response:
-                html = await response.text()
-                soup = BeautifulSoup(html, "lxml")
+        async with aiohttp.ClientSession() as session, session.get(safe_url) as response:
+            html = await response.text()
+            soup = BeautifulSoup(html, "lxml")
 
-                # Count elements
-                links = len(soup.find_all("a"))
-                images = len(soup.find_all("img"))
-                scripts = len(soup.find_all("script"))
-                stylesheets = len(soup.find_all("link", rel="stylesheet"))
+            # Count elements
+            links = len(soup.find_all("a"))
+            images = len(soup.find_all("img"))
+            scripts = len(soup.find_all("script"))
+            stylesheets = len(soup.find_all("link", rel="stylesheet"))
 
-                # Display results
-                table = Table(title="Page Analysis", show_header=False)
-                table.add_column("Property", style="cyan")
-                table.add_column("Value", style="green")
+            # Display results
+            table = Table(title="Page Analysis", show_header=False)
+            table.add_column("Property", style="cyan")
+            table.add_column("Value", style="green")
 
-                table.add_row("Title", soup.title.string if soup.title else "N/A")
-                table.add_row("Status Code", str(response.status))
-                table.add_row("Content-Type", response.headers.get("Content-Type", "N/A"))
-                table.add_row("Content-Length", f"{len(html):,} bytes")
-                table.add_row("Links", str(links))
-                table.add_row("Images", str(images))
-                table.add_row("Scripts", str(scripts))
-                table.add_row("Stylesheets", str(stylesheets))
+            table.add_row("Title", soup.title.string if soup.title else "N/A")
+            table.add_row("Status Code", str(response.status))
+            table.add_row("Content-Type", response.headers.get("Content-Type", "N/A"))
+            table.add_row("Content-Length", f"{len(html):,} bytes")
+            table.add_row("Links", str(links))
+            table.add_row("Images", str(images))
+            table.add_row("Scripts", str(scripts))
+            table.add_row("Stylesheets", str(stylesheets))
 
-                console.print(table)
+            console.print(table)
 
     try:
         asyncio.run(fetch_info())
     except Exception as e:
         console.print(f"[bold red]❌ Error:[/bold red] {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 async def _run_crawler(config: CrawlConfig):
@@ -257,6 +283,8 @@ def _display_config(config: CrawlConfig) -> None:
     table.add_row("Delay (ms)", str(config.delay_ms))
     table.add_row("Include Assets", "✓" if config.include_assets else "✗")
     table.add_row("Same Domain Only", "✓" if config.same_domain_only else "✗")
+    table.add_row("Private Networks", "Allowed" if config.allow_private_networks else "Blocked")
+    table.add_row("Max Asset Size", f"{config.max_asset_bytes:,} bytes")
 
     console.print(table)
 

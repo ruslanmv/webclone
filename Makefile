@@ -15,17 +15,33 @@
         test test-fast lint format typecheck audit \
         clean clean-all \
         docker-build docker-run docker-shell \
-        build publish coverage benchmark
+        build publish coverage benchmark check-patch apply-patch
 
-# ANSI color codes for beautiful output (kept for non-help targets)
-BLUE := \033[0;34m
-GREEN := \033[0;32m
-YELLOW := \033[0;33m
-RED := \033[0;31m
-NC := \033[0m # No Color
+# Keep recipe output plain for cross-platform shells (especially native Windows cmd.exe).
+BLUE :=
+GREEN :=
+YELLOW :=
+RED :=
+NC :=
 
-# Python interpreter (override with: make PYTHON=python3 ...)
-PYTHON ?= python
+ifeq ($(OS),Windows_NT)
+PATH_SEP := ;
+VENV_BIN := .venv/Scripts
+VENV_PYTHON := $(VENV_BIN)/python.exe
+else
+PATH_SEP := :
+VENV_BIN := .venv/bin
+VENV_PYTHON := $(VENV_BIN)/python
+endif
+
+# Python interpreter (override with: make PYTHON=python3 ...).
+# Prefer the uv-created virtualenv so `make run` works immediately after `make install`.
+PYTHON ?= $(if $(wildcard $(VENV_PYTHON)),$(VENV_PYTHON),python)
+PATCH ?= changes.patch
+
+# Make the src-layout package importable from a checkout as a fallback, even if
+# editable installation failed or the caller's Python is not the virtualenv Python.
+export PYTHONPATH := src$(if $(PYTHONPATH),$(PATH_SEP)$(PYTHONPATH),)
 
 # Default target - show help
 .DEFAULT_GOAL := help
@@ -65,6 +81,8 @@ help: ## Display this help message
 	@echo "  publish            Publish to PyPI"
 	@echo "  coverage           Generate HTML coverage report"
 	@echo "  benchmark          Run performance benchmarks"
+	@echo "  check-patch        Check changes.patch, treating already-applied as OK"
+	@echo "  apply-patch        Apply changes.patch with whitespace fixes"
 	@echo
 
 # Internal: ensure uv exists and a .venv is created
@@ -81,9 +99,9 @@ ensure-tk: ## Ensure Tkinter is available for GUI use
 ##@ 🚀 Development
 
 install: uv-ensure ## Install production dependencies using uv (CLI only)
-	@echo "$(BLUE)📦 Installing production dependencies with uv...$(NC)"
+	@echo $(BLUE)Installing production dependencies with uv...$(NC)
 	uv pip install -e .
-	@echo "$(GREEN)✓ Installation complete!$(NC)"
+	@echo $(GREEN)Installation complete!$(NC)
 
 install-all: uv-ensure ## Install CLI + GUI + MCP (all-in-one)
 	@echo "$(BLUE)📦 Installing WebClone CLI + GUI + MCP...$(NC)"
@@ -106,11 +124,11 @@ dev: uv-ensure ## Install development dependencies
 	@echo "$(GREEN)✓ Development environment ready!$(NC)"
 
 start: ## Run WebClone CLI
-	@echo "$(BLUE)🚀 Starting WebClone...$(NC)"
+	@echo $(BLUE)Starting WebClone...$(NC)
 	$(PYTHON) -m webclone.cli --help
 
 run: ## Quick clone example (example.com)
-	@echo "$(BLUE)🌐 Running example clone...$(NC)"
+	@echo $(BLUE)Running example clone...$(NC)
 	$(PYTHON) -m webclone.cli clone https://example.com --max-pages 5 -o ./demo_output
 
 ##@ 🎨 GUI Interface
@@ -154,6 +172,13 @@ mcp-dev: uv-ensure ## Install MCP with dev dependencies
 	@echo "$(BLUE)🤖 Installing MCP server with dev tools...$(NC)"
 	uv pip install -e ".[mcp,dev]"
 	@echo "$(GREEN)✓ MCP development environment ready!$(NC)"
+
+
+check-patch: ## Check a patch with whitespace cleanup and already-applied detection
+	$(PYTHON) scripts/apply_patch.py --check $(PATCH)
+
+apply-patch: ## Apply a patch with whitespace cleanup and already-applied detection
+	$(PYTHON) scripts/apply_patch.py $(PATCH)
 
 ##@ 🧪 Testing & Quality
 

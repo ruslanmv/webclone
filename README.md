@@ -74,6 +74,29 @@ Whether you're archiving websites, conducting competitive research, or building 
 
 ---
 
+
+## 🔒 Authorized Testing & Security Defaults
+
+WebClone is designed for legitimate archiving, classroom labs, and authorized security research. Before crawling a target, confirm that you own the system or have written permission to test it.
+
+Security-oriented defaults now include:
+
+- **Public web targets only by default**: `localhost`, loopback, link-local, private, and reserved IP targets are blocked to reduce SSRF-style misuse and accidental internal-network crawling.
+- **Same-domain crawling by default**: recursive crawls stay on the starting domain unless you explicitly pass `--all-domains`.
+- **Bounded concurrency and pacing**: workers and request delay are configurable so authorized assessments can minimize operational impact.
+- **Per-asset size limits**: `--max-asset-bytes` prevents unexpectedly large assets from exhausting disk or memory.
+- **Fragment normalization**: URL fragments are stripped before crawling to reduce duplicate requests.
+
+For an isolated lab or a target you are explicitly authorized to assess on a private network, opt in deliberately:
+
+```bash
+webclone clone http://127.0.0.1:8000 \
+  --allow-private-networks \
+  --max-pages 25 \
+  --workers 2 \
+  --delay 500
+```
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -94,7 +117,21 @@ pip install webclone
 git clone https://github.com/ruslanmv/webclone.git
 cd webclone
 make install
+make run  # verifies the CLI using the project .venv/src checkout
 ```
+
+
+### Applying Patch Files Safely
+
+If a patch was generated from a branch that may already be partly applied, `git apply --check changes.patch` can fail with messages such as `patch does not apply` or trailing-whitespace warnings. Use the helper target instead:
+
+```bash
+make check-patch PATCH=changes.patch
+make apply-patch PATCH=changes.patch
+```
+
+`check-patch` treats an already-applied patch as success, which is useful when raw `git apply --check changes.patch` fails with `patch does not apply` because the branch already contains the downloader changes. The helper strips trailing whitespace from the patch copy it checks/applies, detects patches that are already applied, and falls back to Git's three-way apply mode for small context drift.
+
 
 ### Your First Clone
 

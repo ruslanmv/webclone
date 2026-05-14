@@ -1,11 +1,12 @@
 """Tests for Pydantic models."""
 
-import pytest
 from pathlib import Path
+
+import pytest
 from pydantic import ValidationError
 
 from webclone.models.config import CrawlConfig, SeleniumConfig
-from webclone.models.metadata import AssetMetadata, PageMetadata, ResourceType
+from webclone.models.metadata import AssetMetadata, CrawlResult, PageMetadata, ResourceType
 
 
 class TestSeleniumConfig:
@@ -43,16 +44,32 @@ class TestCrawlConfig:
         assert str(config.start_url) == "https://example.com/"
         assert config.recursive is True
         assert config.workers == 5
+        assert config.allow_private_networks is False
+        assert config.max_asset_bytes == 50 * 1024 * 1024
 
     def test_output_dir_creation(self, tmp_path: Path) -> None:
         """Test output directory creation."""
         output_dir = tmp_path / "test_output"
-        config = CrawlConfig(
+        CrawlConfig(
             start_url="https://example.com",  # type: ignore[arg-type]
             output_dir=output_dir,
         )
         assert output_dir.exists()
         assert output_dir.is_dir()
+
+    def test_rejects_private_start_url_by_default(self) -> None:
+        """Test private network targets are blocked by default."""
+        with pytest.raises(ValidationError):
+            CrawlConfig(start_url="http://127.0.0.1:8000")  # type: ignore[arg-type]
+
+    def test_allows_private_start_url_when_explicit(self) -> None:
+        """Test private network targets can be explicitly enabled for labs."""
+        config = CrawlConfig(
+            start_url="http://127.0.0.1:8000",  # type: ignore[arg-type]
+            allow_private_networks=True,
+        )
+
+        assert config.allow_private_networks is True
 
     def test_get_subdirs(self, tmp_path: Path) -> None:
         """Test subdirectory creation."""

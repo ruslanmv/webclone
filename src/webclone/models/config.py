@@ -1,10 +1,11 @@
 """Configuration models using Pydantic V2."""
 
 from pathlib import Path
-from typing import Optional
 
-from pydantic import Field, HttpUrl, field_validator
+from pydantic import Field, HttpUrl, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from webclone.utils.security import validate_safe_http_url
 
 
 class SeleniumConfig(BaseSettings):
@@ -27,7 +28,7 @@ class SeleniumConfig(BaseSettings):
     headless: bool = Field(default=True, description="Run browser in headless mode")
     disable_gpu: bool = Field(default=True, description="Disable GPU acceleration")
     window_size: str = Field(default="1920,1080", description="Browser window size")
-    user_agent: Optional[str] = Field(
+    user_agent: str | None = Field(
         default="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
         description="Custom user agent",
     )
@@ -68,6 +69,8 @@ class CrawlConfig(BaseSettings):
         save_screenshots: Save page screenshots
         include_assets: Download CSS, JS, images, etc.
         same_domain_only: Only crawl URLs on same domain
+        allow_private_networks: Allow crawling private/local network hosts
+        max_asset_bytes: Maximum size for a single downloaded asset
     """
 
     model_config = SettingsConfigDict(
@@ -92,8 +95,27 @@ class CrawlConfig(BaseSettings):
     save_screenshots: bool = Field(default=False, description="Save screenshots")
     include_assets: bool = Field(default=True, description="Download assets")
     same_domain_only: bool = Field(default=True, description="Same domain only")
+    allow_private_networks: bool = Field(
+        default=False,
+        description="Allow private, loopback, link-local, and reserved hosts",
+    )
+    max_asset_bytes: int = Field(
+        default=50 * 1024 * 1024,
+        ge=1,
+        le=1024 * 1024 * 1024,
+        description="Maximum bytes to download for a single asset",
+    )
 
     selenium: SeleniumConfig = Field(default_factory=SeleniumConfig)
+
+    @model_validator(mode="after")
+    def validate_start_url(self) -> "CrawlConfig":
+        """Reject unsafe crawl targets unless private networks are explicitly allowed."""
+        validate_safe_http_url(
+            str(self.start_url),
+            allow_private_networks=self.allow_private_networks,
+        )
+        return self
 
     @field_validator("output_dir")
     @classmethod
