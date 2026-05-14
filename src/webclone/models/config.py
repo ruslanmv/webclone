@@ -71,6 +71,8 @@ class CrawlConfig(BaseSettings):
         same_domain_only: Only crawl URLs on same domain
         allow_private_networks: Allow crawling private/local network hosts
         max_asset_bytes: Maximum size for a single downloaded asset
+        cookie_file: Optional Selenium cookie JSON file for authenticated crawling
+        render_js: Render pages with Selenium before saving HTML
     """
 
     model_config = SettingsConfigDict(
@@ -104,6 +106,20 @@ class CrawlConfig(BaseSettings):
         ge=1,
         le=1024 * 1024 * 1024,
         description="Maximum bytes to download for a single asset",
+    )
+    cookie_file: Path | None = Field(
+        default=None,
+        description="Optional Selenium cookie JSON file for authenticated crawling",
+    )
+    render_js: bool = Field(
+        default=False,
+        description="Render pages with Selenium before saving HTML",
+    )
+    render_wait_seconds: float = Field(
+        default=2.0,
+        ge=0,
+        le=30,
+        description="Seconds to wait after Selenium page load before saving rendered HTML",
     )
 
     selenium: SeleniumConfig = Field(default_factory=SeleniumConfig)

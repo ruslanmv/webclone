@@ -13,6 +13,8 @@ from bs4 import BeautifulSoup
 from webclone.core.downloader import AssetDownloader
 from webclone.models.config import CrawlConfig
 from webclone.models.metadata import CrawlResult, PageMetadata
+from webclone.security.cookies import build_cookie_jar
+from webclone.security.rendered import render_page_source
 from webclone.utils.helpers import is_same_domain, safe_filename
 from webclone.utils.logger import get_logger
 from webclone.utils.security import is_safe_http_url, normalize_url
@@ -61,8 +63,17 @@ class AsyncCrawler:
 
     async def __aenter__(self) -> "AsyncCrawler":
         """Async context manager entry."""
+        cookie_jar = build_cookie_jar(
+            self.config.cookie_file,
+            str(self.config.start_url),
+        )
         self.session = aiohttp.ClientSession(
-            headers={"User-Agent": self.config.selenium.user_agent or "WebClone/1.0"}
+            headers={
+                "User-Agent": self.config.selenium.user_agent or "WebClone/1.0",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+            cookie_jar=cookie_jar,
         )
         self.downloader = AssetDownloader(self.config, self.session)
         return self
@@ -146,12 +157,24 @@ class AsyncCrawler:
                     logger.error("Session not initialized")
                     return
 
-                async with self.session.get(
-                    url,
-                    timeout=aiohttp.ClientTimeout(total=self.config.selenium.timeout),
-                ) as response:
-                    response.raise_for_status()
-                    html = await response.text()
+                status_code = 200
+                if self.config.render_js:
+                    html = await asyncio.to_thread(
+                        render_page_source,
+                        url,
+                        self.config.cookie_file,
+                        wait_seconds=self.config.render_wait_seconds,
+                        allow_private_networks=self.config.allow_private_networks,
+                        selenium_config=self.config.selenium,
+                    )
+                else:
+                    async with self.session.get(
+                        url,
+                        timeout=aiohttp.ClientTimeout(total=self.config.selenium.timeout),
+                    ) as response:
+                        response.raise_for_status()
+                        status_code = response.status
+                        html = await response.text()
 
                 elapsed_ms = int((time.perf_counter() - start_time) * 1000)
 
@@ -194,9 +217,7 @@ class AsyncCrawler:
                 # Ensure unique filename
                 counter = 1
                 while html_path.exists():
-                    html_path = (
-                        self.config.get_pages_dir() / f"{filename}_{counter}.html"
-                    )
+                    html_path = self.config.get_pages_dir() / f"{filename}_{counter}.html"
                     counter += 1
 
                 async with aiofiles.open(html_path, "w", encoding="utf-8") as f:
@@ -213,7 +234,7 @@ class AsyncCrawler:
                 page_metadata = PageMetadata(
                     url=url,
                     title=title,
-                    status_code=response.status,
+                    status_code=status_code,
                     crawl_depth=depth,
                     discovered_links=links,
                     assets_count=len(assets),

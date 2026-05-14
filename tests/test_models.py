@@ -46,6 +46,19 @@ class TestCrawlConfig:
         assert config.workers == 5
         assert config.allow_private_networks is False
         assert config.max_asset_bytes == 50 * 1024 * 1024
+        assert config.cookie_file is None
+        assert config.render_js is False
+        assert config.render_wait_seconds == 2.0
+
+    def test_cookie_file_config(self, tmp_path: Path) -> None:
+        """Test optional Selenium cookie file is preserved."""
+        cookie_file = tmp_path / "session.json"
+        config = CrawlConfig(
+            start_url="https://example.com",  # type: ignore[arg-type]
+            cookie_file=cookie_file,
+        )
+
+        assert config.cookie_file == cookie_file
 
     def test_output_dir_creation(self, tmp_path: Path) -> None:
         """Test output directory creation."""

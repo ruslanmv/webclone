@@ -165,6 +165,7 @@ make gui
 **The GUI opens instantly as a native desktop application with:**
 - 🏠 **Home Dashboard** - Feature overview and quick start guide
 - 🔐 **Authentication Manager** - Visual cookie-based auth workflow with browser integration
+- 🛡️ **Download-resistance audits** - Role/access, JavaScript-rendered preview, HAR/API, content-leak, and bulk-fetch checks for owned gated content
 - 📥 **Crawl Configurator** - Point-and-click settings with real-time progress
 - 📊 **Results Analytics** - Comprehensive stats, tables, and export options
 

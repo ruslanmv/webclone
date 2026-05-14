@@ -17,6 +17,15 @@ from rich.table import Table
 from webclone import __version__
 from webclone.core.crawler import AsyncCrawler
 from webclone.models.config import CrawlConfig
+from webclone.security.har import audit_har_file
+from webclone.security.pentest import (
+    DEFAULT_ROUTE_TEMPLATES,
+    DEFAULT_WATERMARK_PATTERNS,
+    DownloadResistanceTester,
+    build_roles,
+    exam_target_from_url,
+    role_from_profile,
+)
 from webclone.utils.logger import setup_logging
 from webclone.utils.security import validate_safe_http_url
 
@@ -89,6 +98,23 @@ def clone(
         help="Maximum size for a single downloaded asset in bytes",
         min=1,
     ),
+    cookie_file: Path | None = typer.Option(
+        None,
+        "--cookie-file",
+        help="Path to saved Selenium cookies JSON file for authorized authenticated crawling",
+    ),
+    render_js: bool = typer.Option(
+        False,
+        "--render-js",
+        help="Render pages with Selenium before saving HTML for authorized JavaScript previews",
+    ),
+    render_wait_seconds: float = typer.Option(
+        2.0,
+        "--render-wait",
+        help="Seconds to wait after Selenium page load before saving rendered HTML",
+        min=0.0,
+        max=30.0,
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-V", help="Verbose output"),
     json_logs: bool = typer.Option(False, "--json-logs", help="JSON formatted logs"),
 ) -> None:
@@ -121,6 +147,9 @@ def clone(
             same_domain_only=same_domain,
             allow_private_networks=allow_private_networks,
             max_asset_bytes=max_asset_bytes,
+            cookie_file=cookie_file,
+            render_js=render_js,
+            render_wait_seconds=render_wait_seconds,
         )
     except Exception as e:
         console.print(f"[bold red]❌ Configuration error:[/bold red] {e}")
@@ -154,6 +183,202 @@ def clone(
         if verbose:
             console.print_exception()
         raise typer.Exit(code=1) from e
+
+
+@app.command("audit")
+def audit(
+    exam_url: str = typer.Argument(
+        ..., help="Owned exam URL, e.g. https://fictional-audit.invalid/exam/MOON-PORTAL-7"
+    ),
+    profile: str = typer.Option(
+        "anonymous",
+        "--profile",
+        help="Role profile: anonymous, free_user, paid_user, expired_user, suspended_user, admin",
+    ),
+    cookie_file: Path | None = typer.Option(
+        None,
+        "--cookie-file",
+        help="Selenium cookie JSON for this role/profile",
+    ),
+    auth_token: str | None = typer.Option(
+        None,
+        "--auth-token",
+        help="Signed internal test-export token to send as Authorization and X-WebClone-Test-Export-Token",
+    ),
+    render_js: bool = typer.Option(
+        False,
+        "--render-js",
+        help="Open the page with Selenium and audit JavaScript-rendered previews plus browser storage",
+    ),
+    mode: list[str] | None = typer.Option(
+        None,
+        "--mode",
+        help="Audit mode: role-access, content-leak, bulk, or rendered. May be repeated.",
+    ),
+    route_template: list[str] | None = typer.Option(
+        None,
+        "--route-template",
+        help="Sensitive route template using {resource_id}. May be repeated for custom apps.",
+    ),
+    bulk_requests: int = typer.Option(
+        20,
+        "--bulk-requests",
+        help="Number of bounded sequential requests for rate-limit simulation",
+        min=1,
+        max=500,
+    ),
+    watermark_pattern: list[str] | None = typer.Option(
+        None,
+        "--watermark-pattern",
+        help="Expected watermark marker to search for in rendered paid/admin content. May be repeated.",
+    ),
+    report: Path = typer.Option(
+        Path("audit-report.json"),
+        "--report",
+        help="Path to write the JSON audit report",
+    ),
+    allow_private_networks: bool = typer.Option(
+        False,
+        "--allow-private-networks",
+        help="Allow private, loopback, link-local, and reserved hosts for owned lab targets",
+    ),
+) -> None:
+    """Run a safer single-profile download-resistance audit for an owned exam page."""
+    setup_logging(level="INFO", json_format=False)
+    try:
+        base_url, exam_id = exam_target_from_url(exam_url)
+        role = role_from_profile(profile, cookie_file, auth_token)
+    except ValueError as exc:
+        console.print(f"[bold red]❌ Audit configuration error:[/bold red] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    selected_modes = set(mode or ["role-access", "content-leak", "bulk"])
+    if render_js:
+        selected_modes.add("rendered")
+
+    tester = DownloadResistanceTester(
+        base_url=base_url,
+        exam_id=exam_id,
+        roles=[role],
+        allow_private_networks=allow_private_networks,
+        bulk_requests=bulk_requests,
+        auth_token=auth_token,
+        render_js=render_js,
+        watermark_patterns=tuple(watermark_pattern or DEFAULT_WATERMARK_PATTERNS),
+        route_templates=tuple(route_template or DEFAULT_ROUTE_TEMPLATES),
+    )
+    audit_report = asyncio.run(tester.run(selected_modes))
+    _write_security_report(audit_report, report)
+    if not audit_report.passed:
+        raise typer.Exit(code=2)
+
+
+@app.command("audit-har")
+def audit_har(
+    har_file: Path = typer.Argument(..., help="Exported browser DevTools HAR file"),
+    expected_role: str = typer.Option(
+        "paid_user",
+        "--expected-role",
+        help="Role/profile represented by the HAR session",
+    ),
+    report: Path = typer.Option(
+        Path("api-audit.json"),
+        "--report",
+        help="Path to write the JSON HAR audit report",
+    ),
+) -> None:
+    """Audit a DevTools HAR export for API overexposure and cacheability leaks."""
+    setup_logging(level="INFO", json_format=False)
+    audit_report = audit_har_file(har_file, expected_role)
+    _write_security_report(audit_report, report)
+    if not audit_report.passed:
+        raise typer.Exit(code=2)
+
+
+@app.command("security-test")
+def security_test(
+    base_url: str = typer.Argument(..., help="Owned application base URL to test"),
+    exam_id: str = typer.Argument(..., help="Exam identifier to probe, e.g. MOON-PORTAL-7"),
+    role_cookie: list[str] | None = typer.Option(
+        None,
+        "--role-cookie",
+        help="Role cookie mapping in ROLE=PATH format. May be repeated.",
+    ),
+    auth_token: str | None = typer.Option(
+        None,
+        "--auth-token",
+        help="Signed internal test-export token sent with all role requests",
+    ),
+    render_js: bool = typer.Option(
+        False,
+        "--render-js",
+        help="Also audit JavaScript-rendered previews and browser storage with Selenium",
+    ),
+    route_template: list[str] | None = typer.Option(
+        None,
+        "--route-template",
+        help="Sensitive route template using {resource_id}. May be repeated for custom apps.",
+    ),
+    mode: list[str] | None = typer.Option(
+        None,
+        "--mode",
+        help="Test mode to run: role-access, content-leak, or bulk. May be repeated.",
+    ),
+    bulk_requests: int = typer.Option(
+        25,
+        "--bulk-requests",
+        help="Number of bounded sequential page requests for the bulk simulation",
+        min=1,
+        max=500,
+    ),
+    delay: int = typer.Option(
+        50,
+        "--delay",
+        help="Delay between bulk simulation requests in milliseconds",
+        min=0,
+        max=5000,
+    ),
+    output: Path = typer.Option(
+        Path("security_report.json"),
+        "--output",
+        "-o",
+        help="Path to write the JSON security report",
+    ),
+    allow_private_networks: bool = typer.Option(
+        False,
+        "--allow-private-networks",
+        help="Allow private, loopback, link-local, and reserved hosts for owned lab targets",
+    ),
+) -> None:
+    """Run an internal content exfiltration/download-resistance test suite.
+
+    This command is intended for applications you own or are authorized to test.
+    It verifies server-side authorization, hidden HTML/API leaks, risky caching,
+    and bounded bulk-access behavior for standard entitlement roles.
+    """
+    setup_logging(level="INFO", json_format=False)
+    roles = build_roles(role_cookie)
+    selected_modes = set(mode or ["role-access", "content-leak", "bulk"])
+    if render_js:
+        selected_modes.add("rendered")
+
+    tester = DownloadResistanceTester(
+        base_url=base_url,
+        exam_id=exam_id,
+        roles=roles,
+        allow_private_networks=allow_private_networks,
+        bulk_requests=bulk_requests,
+        request_delay_ms=delay,
+        auth_token=auth_token,
+        render_js=render_js,
+        route_templates=tuple(route_template or DEFAULT_ROUTE_TEMPLATES),
+    )
+
+    console.print("\n[bold cyan]🛡️ Running download-resistance security tests...[/bold cyan]\n")
+    report = asyncio.run(tester.run(selected_modes))
+    _write_security_report(report, output)
+    if not report.passed:
+        raise typer.Exit(code=2)
 
 
 @app.command()
@@ -216,6 +441,42 @@ def info(
     except Exception as e:
         console.print(f"[bold red]❌ Error:[/bold red] {e}")
         raise typer.Exit(code=1) from e
+
+
+def _write_security_report(report, output: Path) -> None:  # type: ignore[no-untyped-def]
+    """Write a security report and display a compact summary."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", encoding="utf-8") as f:
+        json.dump(report.model_dump(mode="json"), f, indent=2)
+
+    summary = report.summary()
+    table = Table(title="Security Test Summary", show_header=False, border_style="cyan")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", style="white")
+    for key, value in summary.items():
+        table.add_row(str(key), str(value))
+    console.print(table)
+
+    failures = [finding for finding in report.findings if not finding.passed]
+    if failures:
+        console.print("\n[bold yellow]Failed findings[/bold yellow]")
+        failures_table = Table(show_header=True, border_style="yellow")
+        failures_table.add_column("Mode")
+        failures_table.add_column("Role")
+        failures_table.add_column("Route")
+        failures_table.add_column("Status")
+        failures_table.add_column("Reason")
+        for finding in failures[:25]:
+            failures_table.add_row(
+                finding.mode,
+                finding.role,
+                finding.route,
+                str(finding.status_code or "n/a"),
+                finding.reason,
+            )
+        console.print(failures_table)
+
+    console.print(f"\n[dim]📄 Security report saved to: {output}[/dim]")
 
 
 async def _run_crawler(config: CrawlConfig):
@@ -285,6 +546,8 @@ def _display_config(config: CrawlConfig) -> None:
     table.add_row("Same Domain Only", "✓" if config.same_domain_only else "✗")
     table.add_row("Private Networks", "Allowed" if config.allow_private_networks else "Blocked")
     table.add_row("Max Asset Size", f"{config.max_asset_bytes:,} bytes")
+    table.add_row("Cookie File", str(config.cookie_file) if config.cookie_file else "None")
+    table.add_row("Render JavaScript", "✓" if config.render_js else "✗")
 
     console.print(table)
 
