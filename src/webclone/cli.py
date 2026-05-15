@@ -16,7 +16,7 @@ from rich.table import Table
 
 from webclone import __version__
 from webclone.core.crawler import AsyncCrawler
-from webclone.models.config import CrawlConfig
+from webclone.models.config import CrawlConfig, SeleniumConfig
 from webclone.security.har import audit_har_file
 from webclone.security.pentest import (
     DEFAULT_ROUTE_TEMPLATES,
@@ -36,6 +36,35 @@ app = typer.Typer(
 )
 
 console = Console()
+
+
+def _parse_pairs(values: list[str] | None, separator: str, kind: str) -> dict[str, str]:
+    """Parse a list of 'key<sep>value' strings into a dict.
+
+    Used for repeatable CLI options like --cookie name=value and
+    --header 'Name: Value'. Raises a typer.BadParameter on bad input so the
+    user gets an immediate, clear error.
+    """
+    result: dict[str, str] = {}
+    for raw in values or []:
+        if separator not in raw:
+            raise typer.BadParameter(
+                f"Invalid {kind!r} entry: {raw!r} (expected 'key{separator}value')"
+            )
+        key, value = raw.split(separator, 1)
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            raise typer.BadParameter(f"Invalid {kind!r} entry: {raw!r} (empty key)")
+        result[key] = value
+    return result
+
+
+def _build_selenium_config(user_agent: str | None) -> SeleniumConfig | None:
+    """Return a SeleniumConfig override only when the caller customized the UA."""
+    if user_agent is None:
+        return None
+    return SeleniumConfig(user_agent=user_agent)
 
 
 def version_callback(value: bool) -> None:
@@ -103,6 +132,29 @@ def clone(
         "--cookie-file",
         help="Path to saved Selenium cookies JSON file for authorized authenticated crawling",
     ),
+    cookie: list[str] | None = typer.Option(
+        None,
+        "--cookie",
+        help="Ad-hoc cookie as name=value, applied to every request. Repeatable.",
+    ),
+    header: list[str] | None = typer.Option(
+        None,
+        "--header",
+        help="Extra HTTP header as 'Name: Value', applied to every request. Repeatable.",
+    ),
+    user_agent: str | None = typer.Option(
+        None,
+        "--user-agent",
+        help="Override the User-Agent header sent on every request.",
+    ),
+    detect_gates: bool = typer.Option(
+        True,
+        "--detect-gates/--no-detect-gates",
+        help=(
+            "Probe the URL for a static-cookie JS interstitial and apply the "
+            "required cookie before fetching. On by default."
+        ),
+    ),
     render_js: bool = typer.Option(
         False,
         "--render-js",
@@ -169,8 +221,11 @@ def clone(
 
     # Create configuration
     try:
-        config = CrawlConfig(
-            start_url=url,  # type: ignore[arg-type]
+        extra_cookies = _parse_pairs(cookie, "=", "cookie")
+        extra_headers = _parse_pairs(header, ":", "header")
+        selenium_override = _build_selenium_config(user_agent)
+        config_kwargs: dict[str, object] = dict(
+            start_url=url,
             output_dir=output,
             recursive=recursive,
             max_depth=max_depth,
@@ -183,6 +238,9 @@ def clone(
             allow_private_networks=allow_private_networks,
             max_asset_bytes=max_asset_bytes,
             cookie_file=cookie_file,
+            extra_cookies=extra_cookies,
+            extra_headers=extra_headers,
+            auto_unlock_static_cookie_gate=detect_gates,
             render_js=render_js,
             render_wait_seconds=render_wait_seconds,
             wait_for_selector=wait_for_selector,
@@ -193,6 +251,9 @@ def clone(
             detail_selector=detail_selector,
             label_selector=label_selector,
         )
+        if selenium_override is not None:
+            config_kwargs["selenium"] = selenium_override
+        config = CrawlConfig(**config_kwargs)  # type: ignore[arg-type]
     except Exception as e:
         console.print(f"[bold red]❌ Configuration error:[/bold red] {e}")
         raise typer.Exit(code=1) from e
@@ -241,10 +302,37 @@ def clone_knowledge_page(
         "--cookie-file",
         help="Path to authorized Selenium cookies JSON file",
     ),
-    render_js: bool = typer.Option(
+    cookie: list[str] | None = typer.Option(
+        None,
+        "--cookie",
+        help="Ad-hoc cookie as name=value, applied to every request. Repeatable.",
+    ),
+    header: list[str] | None = typer.Option(
+        None,
+        "--header",
+        help="Extra HTTP header as 'Name: Value', applied to every request. Repeatable.",
+    ),
+    user_agent: str | None = typer.Option(
+        None,
+        "--user-agent",
+        help="Override the User-Agent header sent on every request.",
+    ),
+    detect_gates: bool = typer.Option(
         True,
+        "--detect-gates/--no-detect-gates",
+        help=(
+            "Probe the URL for a static-cookie JS interstitial and apply the "
+            "required cookie before fetching. On by default."
+        ),
+    ),
+    render_js: bool = typer.Option(
+        False,
         "--render-js/--no-render-js",
-        help="Render with Selenium before extracting",
+        help=(
+            "Render with Selenium before extracting. Off by default — most "
+            "knowledge pages serve their content in static HTML and the soft "
+            "JS gates that front them are unlocked by --detect-gates."
+        ),
     ),
     wait_for_selector: str | None = typer.Option(
         ".qa",
@@ -278,8 +366,11 @@ def clone_knowledge_page(
     _display_header()
 
     try:
-        config = CrawlConfig(
-            start_url=url,  # type: ignore[arg-type]
+        extra_cookies = _parse_pairs(cookie, "=", "cookie")
+        extra_headers = _parse_pairs(header, ":", "header")
+        selenium_override = _build_selenium_config(user_agent)
+        config_kwargs: dict[str, object] = dict(
+            start_url=url,
             output_dir=output,
             recursive=False,
             max_depth=1,
@@ -290,10 +381,13 @@ def clone_knowledge_page(
             save_pdf=False,
             allow_private_networks=allow_private_networks,
             cookie_file=cookie_file,
+            extra_cookies=extra_cookies,
+            extra_headers=extra_headers,
+            auto_unlock_static_cookie_gate=detect_gates,
             render_js=render_js,
             render_wait_seconds=render_wait_seconds,
             wait_for_selector=wait_for_selector,
-            click_selectors=click_selector or [".qa-answer-button"],
+            click_selectors=click_selector or ([".qa-answer-button"] if render_js else []),
             item_selector=item_selector,
             item_text_selector=item_text_selector,
             option_selector=option_selector,
@@ -301,6 +395,9 @@ def clone_knowledge_page(
             label_selector=label_selector,
             save_structured_content=True,
         )
+        if selenium_override is not None:
+            config_kwargs["selenium"] = selenium_override
+        config = CrawlConfig(**config_kwargs)  # type: ignore[arg-type]
     except Exception as e:
         console.print(f"[bold red]❌ Configuration error:[/bold red] {e}")
         raise typer.Exit(code=1) from e

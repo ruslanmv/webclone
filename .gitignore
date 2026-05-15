@@ -83,3 +83,5 @@ download copy.py
  copy*.*
 * copy*.*
 * *copy.py
+# Local crawl outputs
+out/

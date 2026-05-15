@@ -95,6 +95,10 @@ def initialize_session_state() -> None:
         st.session_state.selenium_service = None
     if "crawl_results" not in st.session_state:
         st.session_state.crawl_results = []
+    if "sync_output_dir" not in st.session_state:
+        st.session_state.sync_output_dir = "./output/sync"
+    if "last_sync_report" not in st.session_state:
+        st.session_state.last_sync_report = None
 
 
 def show_header() -> None:
@@ -256,8 +260,62 @@ def page_authenticate() -> None:
                         st.error(f"❌ Error opening browser: {e}")
 
         if st.session_state.selenium_service:
+            service = st.session_state.selenium_service
+
+            st.markdown("---")
+            st.markdown("### 📥 Sync the page you're looking at")
+            st.caption(
+                "Navigate to any page in the browser window — including pages "
+                "behind your login — then click Sync to copy that exact page "
+                "and extract its structured content for offline study."
+            )
+
+            try:
+                current_url = service.driver.current_url if service.driver else ""
+                current_title = service.driver.title if service.driver else ""
+            except Exception:
+                current_url, current_title = "", ""
+
+            sync_col1, sync_col2 = st.columns([2, 1])
+            with sync_col1:
+                st.text_input(
+                    "Current browser URL",
+                    value=current_url,
+                    disabled=True,
+                    key="auth_current_url",
+                )
+                if current_title:
+                    st.caption(f"Page title: {current_title}")
+            with sync_col2:
+                st.session_state.sync_output_dir = st.text_input(
+                    "Output folder",
+                    value=st.session_state.sync_output_dir,
+                    key="auth_sync_output_dir",
+                )
+
+            if st.button(
+                "📥 Sync this page",
+                type="primary",
+                use_container_width=True,
+                help="Copy the page currently shown in the browser to disk",
+            ):
+                try:
+                    report = service.capture_current_page(
+                        Path(st.session_state.sync_output_dir)
+                    )
+                    st.session_state.last_sync_report = report
+                    st.success(
+                        f"✅ Synced {report['item_count']} items from "
+                        f"{report['final_url']} → "
+                        f"`{st.session_state.sync_output_dir}/structured_content.json`"
+                    )
+                except Exception as e:
+                    st.error(f"❌ Sync failed: {e}")
+
+            st.markdown("---")
+            st.markdown("### 💾 Save session (cookies) for automated crawls")
+
             if st.button("💾 Save Session & Cookies", type="secondary", use_container_width=True):
-                service = st.session_state.selenium_service
                 cookie_file = Path(f"./cookies/{cookie_name}.json")
 
                 try:
@@ -443,6 +501,7 @@ def page_crawl() -> None:
                         include_assets=include_assets,
                         save_pdf=save_pdf,
                         same_domain_only=same_domain,
+                        cookie_file=st.session_state.cookie_file,
                     )
 
                     # Run crawler
@@ -477,6 +536,140 @@ def page_crawl() -> None:
     with col_stop:
         if st.button("⏹️ Stop Crawl", type="secondary", use_container_width=True):
             st.warning("⚠️ Stop functionality requires background task management")
+
+
+def page_sync_live() -> None:
+    """Dedicated page for syncing whatever the user is viewing in Selenium.
+
+    Workflow:
+      1. Open a browser (Selenium) — optionally loading saved cookies first.
+      2. Manually navigate to the page you want to copy (paid content, post-
+         login, paginated results, etc.).
+      3. Click "Sync this page" to dump the current DOM + structured items.
+      4. Repeat as you click through more pages; each Sync overwrites the
+         output folder unless you change it.
+    """
+    show_header()
+
+    st.markdown("## 📥 Sync Live Page")
+    st.caption(
+        "Open a Selenium-controlled browser, navigate anywhere, then click "
+        "Sync to copy that exact page to your machine. Works for content "
+        "behind a paywall or login that you are authorized to access."
+    )
+
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        start_url = st.text_input(
+            "Open this URL in the browser",
+            value="https://example.com",
+            help="The browser will navigate here first; you can browse anywhere afterwards.",
+        )
+    with col2:
+        st.session_state.sync_output_dir = st.text_input(
+            "Output folder",
+            value=st.session_state.sync_output_dir,
+        )
+
+    cookie_dir = Path("./cookies")
+    cookie_dir.mkdir(exist_ok=True)
+    cookie_files = sorted(cookie_dir.glob("*.json"))
+    preload_cookies = None
+    if cookie_files:
+        preload_cookies = st.selectbox(
+            "Reuse saved session cookies (optional)",
+            options=[None, *cookie_files],
+            format_func=lambda x: "None — start fresh" if x is None else x.name,
+        )
+
+    btn_col1, btn_col2, btn_col3 = st.columns(3)
+
+    with btn_col1:
+        if st.button("🌐 Open browser", type="primary", use_container_width=True):
+            if not start_url.startswith(("http://", "https://")):
+                st.error("URL must start with http:// or https://")
+            else:
+                try:
+                    if st.session_state.selenium_service is None:
+                        service = SeleniumService(SeleniumConfig(headless=False))
+                        service.start_driver()
+                        st.session_state.selenium_service = service
+                    else:
+                        service = st.session_state.selenium_service
+
+                    if preload_cookies is not None:
+                        service.navigate_to(start_url)
+                        service.load_cookies(preload_cookies)
+
+                    service.navigate_to(start_url)
+                    st.success(
+                        "Browser open. Log in, navigate, or paginate freely, "
+                        "then come back here and click **Sync this page**."
+                    )
+                except Exception as e:
+                    st.error(f"❌ Could not open browser: {e}")
+
+    service = st.session_state.selenium_service
+    current_url = ""
+    if service and service.driver:
+        try:
+            current_url = service.driver.current_url
+        except Exception:
+            current_url = ""
+
+    if current_url:
+        st.info(f"Browser is currently on: {current_url}")
+
+    with btn_col2:
+        if st.button(
+            "📥 Sync this page",
+            type="primary",
+            use_container_width=True,
+            disabled=service is None,
+        ):
+            try:
+                report = service.capture_current_page(
+                    Path(st.session_state.sync_output_dir)
+                )
+                st.session_state.last_sync_report = report
+                st.success(
+                    f"✅ Synced {report['item_count']} items from "
+                    f"{report['final_url']}"
+                )
+            except Exception as e:
+                st.error(f"❌ Sync failed: {e}")
+
+    with btn_col3:
+        if st.button(
+            "🛑 Close browser",
+            use_container_width=True,
+            disabled=service is None,
+        ):
+            try:
+                service.stop_driver()
+            finally:
+                st.session_state.selenium_service = None
+            st.info("Browser closed.")
+
+    report = st.session_state.last_sync_report
+    if report:
+        st.markdown("---")
+        st.markdown("### Last sync result")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Items extracted", report.get("item_count", 0))
+        c2.metric("Detail blocks", report.get("detail_block_count", 0))
+        c3.metric("Labels (answers)", report.get("label_count", 0))
+        out = Path(st.session_state.sync_output_dir)
+        st.markdown(
+            f"**Files saved to** `{out}`:\n"
+            f"- `page.rendered.html` — exact DOM the browser was showing\n"
+            f"- `structured_content.json` — parsed items (Q&A or whatever the selectors match)\n"
+            f"- `render_debug_report.json` — counts and auth-likelihood diagnostics"
+        )
+        struct_path = out / "structured_content.json"
+        if struct_path.exists():
+            with st.expander("Preview structured_content.json"):
+                st.code(struct_path.read_text(encoding="utf-8")[:5000], language="json")
 
 
 def page_results() -> None:
@@ -558,8 +751,8 @@ def main() -> None:
 
         selected = option_menu(
             "Navigation",
-            ["Home", "Authentication", "Crawl Website", "Results"],
-            icons=["house", "key", "download", "bar-chart"],
+            ["Home", "Authentication", "Sync Live Page", "Crawl Website", "Results"],
+            icons=["house", "key", "cloud-download", "download", "bar-chart"],
             menu_icon="cast",
             default_index=0,
         )
@@ -581,6 +774,8 @@ def main() -> None:
         page_home()
     elif selected == "Authentication":
         page_authenticate()
+    elif selected == "Sync Live Page":
+        page_sync_live()
     elif selected == "Crawl Website":
         page_crawl()
     elif selected == "Results":
