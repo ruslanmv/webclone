@@ -1,18 +1,25 @@
 """Continuous "record while you surf" capture loop for the GUI Live Sync mode.
 
 Idea: while the user clicks around in a Selenium-controlled browser, a
-background thread polls the driver, and any time the URL changes and the
-page has finished loading, it snapshots the DOM into its own subfolder of
-the output directory. Clicking Stop ends the thread and leaves a manifest
-listing every capture.
+background thread polls the driver, and any time the URL changes OR the
+visible page content changes meaningfully, it snapshots the DOM into its
+own subfolder of the output directory. Clicking Stop ends the thread and
+leaves a manifest listing every capture.
+
+Why content-change detection matters: many paginated pages (especially
+SPAs and AJAX-driven exam dumps) advance to the "next question set"
+without changing the URL — or change only a `#fragment`. URL-only
+detection would miss every page after the first. We hash a fingerprint
+of the body text on each poll and capture whenever it changes.
 
 The recorder reuses `SeleniumService.capture_current_page`, so the on-disk
 artifacts are identical to single-shot Live Sync and to the CLI's
-`clone-knowledge-page` — just one set per visited URL.
+`clone-knowledge-page` — just one set per visited page.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import threading
@@ -20,7 +27,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 from webclone.utils.logger import get_logger
 
@@ -49,6 +56,17 @@ def _slug_for(url: str, max_length: int = 60) -> str:
     return raw[:max_length]
 
 
+def _normalize_url(url: str) -> str:
+    """Drop empty fragments so `foo#` and `foo` aren't treated as different pages."""
+    parts = urlsplit(url)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, parts.query, parts.fragment))
+
+
+# Snippet length that's considered "meaningful" page content; anything shorter
+# is treated as a transient (blank tab, error stub) and ignored for hashing.
+_MIN_CONTENT_LENGTH = 80
+
+
 class LiveRecorder:
     """Background recorder that snapshots every page the user navigates to.
 
@@ -73,6 +91,7 @@ class LiveRecorder:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._last_url: str | None = None
+        self._last_content_hash: str | None = None
         self._lock = threading.Lock()
 
     # -- lifecycle ---------------------------------------------------------
@@ -127,6 +146,12 @@ class LiveRecorder:
         try:
             current_url = driver.current_url
             ready_state = driver.execute_script("return document.readyState")
+            # Pull body text once per poll. We don't need anything heavier than
+            # innerText — it changes when the visible questions/options change
+            # (which is exactly what we want to detect).
+            body_text = driver.execute_script(
+                "return (document.body && document.body.innerText) || '';"
+            ) or ""
         except Exception as exc:  # noqa: BLE001
             logger.warning("Recorder poll failed: %s", exc)
             self.error = str(exc)
@@ -136,22 +161,60 @@ class LiveRecorder:
             return
         if ready_state != "complete":
             return
-        if reason == "poll" and current_url == self._last_url:
+
+        normalized = _normalize_url(current_url)
+        content_hash = self._hash_content(str(body_text))
+
+        url_changed = normalized != self._last_url
+        content_changed = (
+            content_hash is not None and content_hash != self._last_content_hash
+        )
+
+        # On the initial tick we always capture. Afterwards we capture if
+        # EITHER the URL changed OR the page content changed (covers AJAX
+        # pagination that leaves the URL untouched).
+        if reason == "poll" and not url_changed and not content_changed:
             return
 
-        # Small settle delay so dynamic content (XHR, lazy widgets) renders
-        # before we snapshot the DOM.
-        if self.settle_after_load > 0:
+        # Settle delay so dynamic content (XHR, lazy widgets) renders fully
+        # before we snapshot. Skip when we have no signal yet (initial tick).
+        if self.settle_after_load > 0 and (url_changed or content_changed):
             self._stop.wait(self.settle_after_load)
             if self._stop.is_set():
                 return
+            # Re-read content after the settle so the hash reflects the final DOM.
+            try:
+                body_text = driver.execute_script(
+                    "return (document.body && document.body.innerText) || '';"
+                ) or ""
+                content_hash = self._hash_content(str(body_text))
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Re-read after settle failed: %s", exc)
 
-        self._capture(current_url)
+        self._capture(current_url, normalized, content_hash)
 
-    def _capture(self, url: str) -> None:
+    @staticmethod
+    def _hash_content(text: str) -> str | None:
+        """Return a stable hash of meaningful page content, or None if too short."""
+        # Collapse whitespace so trivial reflows don't trigger captures.
+        cleaned = " ".join(text.split())
+        if len(cleaned) < _MIN_CONTENT_LENGTH:
+            return None
+        return hashlib.md5(cleaned.encode("utf-8")).hexdigest()
+
+    def _capture(
+        self,
+        url: str,
+        normalized_url: str,
+        content_hash: str | None,
+    ) -> None:
         with self._lock:
             index = len(self.captures) + 1
-            folder = self.session_dir / f"{index:03d}_{_slug_for(url)}"
+            # If we already have an entry for this URL, suffix the folder so
+            # consecutive captures of the "same URL, different content"
+            # (the AJAX-pagination case) don't overwrite each other.
+            base_slug = _slug_for(url)
+            folder = self.session_dir / f"{index:03d}_{base_slug}"
         try:
             report = self.service.capture_current_page(folder)
         except Exception as exc:  # noqa: BLE001
@@ -167,7 +230,8 @@ class LiveRecorder:
         )
         with self._lock:
             self.captures.append(capture)
-            self._last_url = url
+            self._last_url = normalized_url
+            self._last_content_hash = content_hash
         self._write_manifest()
         logger.info(
             "Live recorder captured #%s %s (%s items) → %s",
@@ -211,3 +275,4 @@ class LiveRecorder:
             )
         except OSError as exc:
             logger.warning("Could not write recorder manifest: %s", exc)
+
