@@ -141,7 +141,7 @@ install-gui: uv-ensure ## Install with GUI dependencies
 
 gui: ## Launch the Enterprise Desktop GUI
 	@echo "$(BLUE)🎨 Starting WebClone Enterprise Desktop GUI...$(NC)"
-	@find src -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
+	-@$(PYTHON) -c "import shutil, pathlib; [shutil.rmtree(p, ignore_errors=True) for p in pathlib.Path('src').rglob('__pycache__')]"
 	$(PYTHON) webclone-gui.py
 
 gui-dev: uv-ensure ## Launch GUI with dev dependencies
