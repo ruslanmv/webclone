@@ -16,6 +16,8 @@ from rich.table import Table
 
 from webclone import __version__
 from webclone.core.crawler import AsyncCrawler
+from webclone.core.page_capture import CaptureSelectors
+from webclone.core.paginated_capture import walk_paginated
 from webclone.models.config import CrawlConfig, SeleniumConfig
 from webclone.security.har import audit_har_file
 from webclone.security.pentest import (
@@ -421,6 +423,174 @@ def clone_knowledge_page(
         if verbose:
             console.print_exception()
         raise typer.Exit(code=1) from e
+
+
+@app.command("clone-paginated")
+def clone_paginated(
+    url: str = typer.Argument(..., help="Authorized URL to walk page-by-page"),
+    cookie_file: Path | None = typer.Option(
+        None,
+        "--cookie-file",
+        help="Selenium cookie JSON file (member session, cf_clearance, etc.) "
+        "saved from the GUI Authentication tab.",
+    ),
+    pages: int = typer.Option(
+        5,
+        "--pages",
+        "-p",
+        help="Maximum number of pages to capture, including the initial one.",
+        min=1,
+        max=500,
+    ),
+    next_selector: str = typer.Option(
+        ".nextqa",
+        "--next-selector",
+        help="CSS selector for the in-page Next button to click between captures.",
+    ),
+    output: Path = typer.Option(
+        Path("./out/paginated"),
+        "--output",
+        "-o",
+        help="Output directory; each captured page lives in its own NNN_ subfolder.",
+    ),
+    delay_seconds: float = typer.Option(
+        2.0,
+        "--delay",
+        help="Polite pause (s) after the DOM changes before snapshotting.",
+        min=0.0,
+        max=60.0,
+    ),
+    wait_for_change_seconds: float = typer.Option(
+        10.0,
+        "--wait-for-change",
+        help="Max seconds to wait for the page content to actually update after a click.",
+        min=1.0,
+        max=120.0,
+    ),
+    item_selector: str = typer.Option(".qa", "--item-selector"),
+    item_text_selector: str = typer.Option(".qa-question", "--item-text-selector"),
+    option_selector: str = typer.Option(".qa-options label", "--option-selector"),
+    detail_selector: str = typer.Option(".qa-answerexp", "--detail-selector"),
+    label_selector: str = typer.Option(".correct-answer", "--label-selector"),
+    headless: bool = typer.Option(
+        True,
+        "--headless/--show-browser",
+        help="Run Chrome headless. Use --show-browser to watch the walk in a visible window.",
+    ),
+    allow_private_networks: bool = typer.Option(False, "--allow-private-networks"),
+    verbose: bool = typer.Option(False, "--verbose", "-V"),
+) -> None:
+    """Walk paginated content (URL never changes) by clicking a Next selector.
+
+    Loads the page in a real browser using your saved authorized session
+    cookies, captures the first view, then clicks `--next-selector` up to
+    `--pages - 1` more times, capturing the DOM after each click.
+
+    Example:
+
+      webclone clone-paginated https://example.invalid/exam/X-questions \\
+        --cookie-file cookies/my_session.json \\
+        --pages 20 --next-selector .nextqa \\
+        --output ./out/x-questions
+
+    Each page lands in `<output>/NNN_<slug>/page.rendered.html` with the
+    same `structured_content.json` extraction the crawler produces.
+    """
+    setup_logging(level="DEBUG" if verbose else "INFO", json_format=False)
+    _display_header()
+
+    try:
+        validate_safe_http_url(url, allow_private_networks=allow_private_networks)
+    except ValueError as exc:
+        console.print(f"[bold red]❌ {exc}[/bold red]")
+        raise typer.Exit(code=1) from exc
+
+    if cookie_file is not None and not cookie_file.exists():
+        console.print(f"[bold red]❌ Cookie file not found:[/bold red] {cookie_file}")
+        raise typer.Exit(code=1)
+
+    selectors = CaptureSelectors(
+        item=item_selector,
+        item_text=item_text_selector,
+        options=option_selector,
+        detail=detail_selector,
+        label=label_selector,
+    )
+
+    selenium_cfg = SeleniumConfig(headless=headless)
+
+    # Lazy import so the package doesn't require Selenium for non-Selenium
+    # commands.
+    from webclone.services.selenium_service import SeleniumService
+
+    with SeleniumService(selenium_cfg) as service:
+        if service.driver is None:
+            console.print("[bold red]❌ Could not start Chrome[/bold red]")
+            raise typer.Exit(code=1)
+
+        if cookie_file is not None:
+            # Selenium can only add cookies for the current origin, so we
+            # navigate to the origin first, then add the cookies, then go
+            # to the real URL.
+            from urllib.parse import urlparse
+
+            origin = f"{urlparse(url).scheme}://{urlparse(url).netloc}/"
+            service.driver.get(origin)
+            service.load_cookies(cookie_file)
+
+        console.print(f"\n[bold cyan]🌐 Loading[/bold cyan] {url}")
+        service.driver.get(url)
+
+        # Wait for the item selector to appear so we don't capture an empty DOM.
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.webdriver.support.ui import WebDriverWait
+
+        try:
+            WebDriverWait(service.driver, 15).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, item_selector))
+            )
+        except Exception:
+            console.print(
+                f"[yellow]⚠️  Item selector {item_selector!r} did not appear "
+                f"within 15s — continuing anyway.[/yellow]"
+            )
+
+        console.print(
+            f"[bold cyan]📄 Walking up to {pages} page(s) via[/bold cyan] {next_selector!r}\n"
+        )
+
+        captures = walk_paginated(
+            service.driver,
+            output_dir=output,
+            selectors=selectors,
+            next_selector=next_selector,
+            max_pages=pages,
+            delay_between_clicks=delay_seconds,
+            wait_for_change_seconds=wait_for_change_seconds,
+        )
+
+    # Summary
+    table = Table(title="Paginated capture", border_style="green")
+    table.add_column("Step", style="cyan", no_wrap=True)
+    table.add_column("Items", style="magenta", justify="right")
+    table.add_column("Folder", style="white")
+    for c in captures:
+        table.add_row(str(c.index), str(c.item_count), str(c.folder))
+    console.print(table)
+
+    total_items = sum(c.item_count for c in captures)
+    console.print(
+        f"\n[bold green]✨ Done.[/bold green] {len(captures)} page(s) captured · "
+        f"{total_items} item(s) across all pages · output: [cyan]{output}[/cyan]"
+    )
+
+    if len(captures) < pages:
+        console.print(
+            "[yellow]Note:[/yellow] walk stopped early. Either the Next button "
+            "disappeared, the DOM did not change in time, or you reached the "
+            "last page."
+        )
 
 
 @app.command("audit")

@@ -58,10 +58,17 @@ logger = get_logger(__name__)
 # JavaScript that installs a MutationObserver on the watched content area.
 # Idempotent: re-running it is a no-op if the observer is already in place,
 # which lets us re-inject after a navigation without leaking observers.
+#
+# Each install generates a random session id (sid). When the document is
+# replaced (full-page reload caused by, e.g., a form-submit Next button),
+# window.__wc_obs is wiped along with the rest of the page; the next call
+# creates a brand-new sid. The recorder watches both the revision counter
+# (in-page AJAX mutations) AND the sid (new document) so it never misses
+# a content change regardless of HOW the site advances pages.
 _INSTALL_OBSERVER_JS = r"""
 var watchSel = arguments[0];
 if (window.__wc_obs && window.__wc_obs.sel === watchSel) {
-  return { installed: true, reused: true };
+  return { installed: true, reused: true, sid: window.__wc_obs.sid };
 }
 try { if (window.__wc_obs && window.__wc_obs.disconnect) window.__wc_obs.disconnect(); }
 catch (e) {}
@@ -79,13 +86,23 @@ function fingerprint() {
   return parts.join('␞');
 }
 
+function fpHash(s) {
+  var h = 0;
+  for (var i = 0; i < s.length; i++) {
+    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  }
+  return h;
+}
+
 var initial = fingerprint();
 window.__wc_obs = {
+  sid: Math.random().toString(36).slice(2) + '_' + Date.now(),
   sel: watchSel,
   rev: 1,
   snap: initial,
   matched: document.querySelectorAll(watchSel).length,
   _timer: null,
+  fpHash: fpHash,
   disconnect: function() { if (this._mo) this._mo.disconnect(); }
 };
 
@@ -112,16 +129,28 @@ window.__wc_obs._mo.observe(document.body || document.documentElement, {
 return {
   installed: true,
   reused: false,
+  sid: window.__wc_obs.sid,
   matched: window.__wc_obs.matched
 };
 """
 
 # Cheap polling script — no DOM walk, just reads the observer state.
+# `sid` lets the recorder detect document replacement (full page reload);
+# `fp` is a numeric hash of the watched-area text so we can catch mutations
+# that somehow slip past the MutationObserver callback (race conditions
+# during the very first mutation after install).
 _POLL_OBSERVER_JS = r"""
+var o = window.__wc_obs;
+var fp = 0;
+if (o && o.snap && o.fpHash) {
+  try { fp = o.fpHash(o.snap); } catch (e) { fp = 0; }
+}
 return {
-  installed: !!window.__wc_obs,
-  rev: (window.__wc_obs && window.__wc_obs.rev) || 0,
-  matched: (window.__wc_obs && window.__wc_obs.matched) || 0,
+  installed: !!o,
+  sid: o ? o.sid : null,
+  rev: (o && o.rev) || 0,
+  fp: fp,
+  matched: (o && o.matched) || 0,
   url: location.href,
   ready: document.readyState
 };
@@ -192,6 +221,8 @@ class LiveRecorder:
         self._last_url: str | None = None
         self._last_revision: int = 0
         self._last_content_hash: str | None = None
+        self._last_sid: str | None = None
+        self._last_fp: int | None = None
         self._lock = threading.Lock()
 
     # -- lifecycle ---------------------------------------------------------
@@ -270,12 +301,26 @@ class LiveRecorder:
             return
 
         revision = int(state.get("rev") or 0)
+        sid = state.get("sid")
+        fp = state.get("fp")
         normalized = _normalize_url(current_url)
-        url_changed = normalized != self._last_url
-        revision_changed = revision != self._last_revision and revision > 0
 
-        # Cheap fallback: whole-body hash, used only if the observer reports
-        # zero matched elements (selector didn't match anything on this page).
+        # FOUR independent change signals — capture if ANY fires. This catches
+        # every variant of "page changed" we've seen on real sites:
+        #   • URL changed                (classic navigation)
+        #   • SID changed                (full-page reload — new document)
+        #   • Revision counter advanced  (in-page AJAX swap detected by observer)
+        #   • Fingerprint hash changed   (mutation race / observer missed it)
+        url_changed = normalized != self._last_url
+        sid_changed = (
+            sid is not None and self._last_sid is not None and sid != self._last_sid
+        )
+        revision_changed = revision != self._last_revision and revision > 0
+        fp_changed = (
+            fp is not None and self._last_fp is not None and fp != self._last_fp
+        )
+
+        # Whole-body fallback — only when the observer matched nothing at all.
         content_hash: str | None = None
         if not state.get("installed") or state.get("matched") == 0:
             try:
@@ -289,7 +334,13 @@ class LiveRecorder:
             content_hash is not None and content_hash != self._last_content_hash
         )
 
-        if reason == "poll" and not (url_changed or revision_changed or content_changed):
+        if reason == "poll" and not (
+            url_changed
+            or sid_changed
+            or revision_changed
+            or fp_changed
+            or content_changed
+        ):
             return
 
         # Settle delay so dynamic content fully renders before we snapshot.
@@ -301,6 +352,8 @@ class LiveRecorder:
             try:
                 state2 = driver.execute_script(_POLL_OBSERVER_JS) or {}
                 revision = int(state2.get("rev") or revision)
+                sid = state2.get("sid") or sid
+                fp = state2.get("fp") if state2.get("fp") is not None else fp
                 current_url = str(state2.get("url") or current_url)
                 normalized = _normalize_url(current_url)
             except Exception:  # noqa: BLE001
@@ -310,6 +363,8 @@ class LiveRecorder:
             url=current_url,
             normalized_url=normalized,
             revision=revision,
+            sid=sid,
+            fp=fp,
             content_hash=content_hash,
             matched=int(state.get("matched") or 0),
         )
@@ -328,6 +383,8 @@ class LiveRecorder:
         url: str,
         normalized_url: str,
         revision: int,
+        sid: str | None,
+        fp: int | None,
         content_hash: str | None,
         matched: int,
     ) -> None:
@@ -352,13 +409,18 @@ class LiveRecorder:
             self.captures.append(capture)
             self._last_url = normalized_url
             self._last_revision = revision
+            self._last_sid = sid
+            if fp is not None:
+                self._last_fp = fp
             if content_hash is not None:
                 self._last_content_hash = content_hash
         self._write_manifest()
         logger.info(
-            "Live recorder captured #%s rev=%s matched=%s %s (%s items) → %s",
+            "Live recorder captured #%s sid=%s rev=%s fp=%s matched=%s %s (%s items) → %s",
             capture.index,
+            sid,
             revision,
+            fp,
             matched,
             url,
             capture.item_count,
