@@ -171,7 +171,7 @@ class WebCloneGUI:
     def _create_layout(self) -> None:
         """Create the main application layout."""
         logger.info("Creating main application layout")
-        
+
         # Main container
         main_container = ttk.Frame(self.root)
         main_container.pack(fill=BOTH, expand=YES, padx=0, pady=0)
@@ -179,11 +179,79 @@ class WebCloneGUI:
         # Sidebar (left)
         self._create_sidebar(main_container)
 
-        # Content area (right)
-        self.content_frame = ttk.Frame(main_container)
-        self.content_frame.pack(side=LEFT, fill=BOTH, expand=YES, padx=20, pady=20)
-        
-        logger.info("Main layout created successfully")
+        # Scrollable content area (right). The crawl page in particular is
+        # taller than most screens; without this, the bottom controls were
+        # clipped because the toplevel had no vertical scrollbar.
+        content_area = ttk.Frame(main_container)
+        content_area.pack(side=LEFT, fill=BOTH, expand=YES)
+
+        self._content_canvas = tk.Canvas(
+            content_area,
+            highlightthickness=0,
+            borderwidth=0,
+        )
+        self._content_scrollbar = ttk.Scrollbar(
+            content_area,
+            orient=VERTICAL,
+            command=self._content_canvas.yview,
+        )
+        self._content_canvas.configure(yscrollcommand=self._content_scrollbar.set)
+
+        self._content_scrollbar.pack(side=RIGHT, fill=Y)
+        self._content_canvas.pack(side=LEFT, fill=BOTH, expand=YES)
+
+        self.content_frame = ttk.Frame(self._content_canvas)
+        self._content_window = self._content_canvas.create_window(
+            (0, 0),
+            window=self.content_frame,
+            anchor=NW,
+        )
+        # Match content frame width to the canvas so children that pack(fill=X)
+        # render at full width; recompute scrollregion when content grows.
+        self.content_frame.bind(
+            "<Configure>",
+            lambda e: self._content_canvas.configure(
+                scrollregion=self._content_canvas.bbox("all")
+            ),
+        )
+        self._content_canvas.bind(
+            "<Configure>",
+            lambda e: self._content_canvas.itemconfigure(
+                self._content_window, width=e.width
+            ),
+        )
+
+        # Mouse-wheel scrolling: bind only while the cursor is inside the
+        # content area so other widgets (sidebar, dialogs) keep their wheel.
+        def _on_wheel(event: Any) -> None:
+            if event.num == 4 or getattr(event, "delta", 0) > 0:
+                self._content_canvas.yview_scroll(-3, "units")
+            elif event.num == 5 or getattr(event, "delta", 0) < 0:
+                self._content_canvas.yview_scroll(3, "units")
+
+        def _bind_wheel(_event: Any) -> None:
+            self._content_canvas.bind_all("<MouseWheel>", _on_wheel)
+            self._content_canvas.bind_all("<Button-4>", _on_wheel)
+            self._content_canvas.bind_all("<Button-5>", _on_wheel)
+
+        def _unbind_wheel(_event: Any) -> None:
+            self._content_canvas.unbind_all("<MouseWheel>")
+            self._content_canvas.unbind_all("<Button-4>")
+            self._content_canvas.unbind_all("<Button-5>")
+
+        self._content_canvas.bind("<Enter>", _bind_wheel)
+        self._content_canvas.bind("<Leave>", _unbind_wheel)
+
+        # Reset scroll to top whenever the page changes.
+        self._reset_scroll = lambda: self._content_canvas.yview_moveto(0.0)
+
+        # Inner padding so children don't touch the canvas edges.
+        try:
+            self.content_frame.configure(padding=(20, 20, 20, 20))
+        except tk.TclError:
+            pass
+
+        logger.info("Main layout created successfully (scrollable)")
 
     def _create_sidebar(self, parent: ttk.Frame) -> None:
         """Create navigation sidebar."""
@@ -268,7 +336,7 @@ class WebCloneGUI:
     def _show_page(self, page_id: str) -> None:
         """Switch to a different page."""
         logger.info(f"Switching to page: {page_id} (Browser active: {self.browser_active})")
-        
+
         # Clear content frame
         for widget in self.content_frame.winfo_children():
             widget.destroy()
@@ -284,6 +352,13 @@ class WebCloneGUI:
             self._create_crawl_page()
         elif page_id == "results":
             self._create_results_page()
+
+        # Scroll to the top of the new page so the user starts at the title,
+        # not wherever the previous page was scrolled to.
+        try:
+            self._reset_scroll()
+        except Exception:
+            pass
 
     # ======================================================================
     # HOME PAGE
@@ -987,6 +1062,65 @@ Troubleshooting:
         subtitle = ttk.Label(self.content_frame, **subtitle_kwargs)
         subtitle.pack(pady=(0, 20))
 
+        # ------------------------------------------------------------------
+        # Mode selector — picks one of three workflows. Live Sync disables
+        # the crawl/render settings below since the browser already has the
+        # exact page the user wants to copy.
+        # ------------------------------------------------------------------
+        self._crawl_advanced_widgets: list[Any] = []
+        self.crawl_mode_var = tk.StringVar(value="standard")
+
+        mode_frame = ttk.LabelFrame(
+            self.content_frame,
+            text="🎯 Mode",
+            padding=15,
+        )
+        mode_frame.pack(fill=X, pady=10)
+
+        mode_options = [
+            (
+                "standard",
+                "📥 Standard Clone",
+                "Polite recursive HTTP crawl (asset download, PDFs, depth limits).",
+            ),
+            (
+                "knowledge",
+                "🧪 Knowledge Page",
+                "Single page → structured_content.json for RAG / study sets.",
+            ),
+            (
+                "live",
+                "🔴 Live Sync (clone what you are surfing)",
+                "Snapshot the page currently shown in the Selenium browser — "
+                "perfect for content you paid for and reached after login.",
+            ),
+        ]
+        for value, label, hint in mode_options:
+            radio_kwargs: dict[str, Any] = {
+                "text": label,
+                "variable": self.crawl_mode_var,
+                "value": value,
+                "command": self._apply_crawl_mode,
+            }
+            if USING_TTKBOOTSTRAP:
+                radio_kwargs["bootstyle"] = "info"
+            ttk.Radiobutton(mode_frame, **radio_kwargs).pack(anchor=W, pady=(4, 0))
+            hint_kwargs: dict[str, Any] = {
+                "text": "    " + hint,
+                "font": ("Segoe UI", 8),
+            }
+            if USING_TTKBOOTSTRAP:
+                hint_kwargs["bootstyle"] = "secondary"
+            ttk.Label(mode_frame, **hint_kwargs).pack(anchor=W, pady=(0, 6))
+
+        self._live_banner_var = tk.StringVar(value="")
+        self._live_banner = ttk.Label(
+            mode_frame,
+            textvariable=self._live_banner_var,
+            font=("Segoe UI", 9, "italic"),
+        )
+        self._live_banner.pack(anchor=W, pady=(4, 0))
+
         # Basic configuration
         basic_frame = ttk.LabelFrame(
             self.content_frame,
@@ -1090,7 +1224,9 @@ Troubleshooting:
         }
         if USING_TTKBOOTSTRAP:
             rec_kwargs["bootstyle"] = "success-round-toggle"
-        ttk.Checkbutton(left_col, **rec_kwargs).pack(anchor=W, pady=5)
+        rec_btn = ttk.Checkbutton(left_col, **rec_kwargs)
+        rec_btn.pack(anchor=W, pady=5)
+        self._crawl_advanced_widgets.append(rec_btn)
 
         self.same_domain_var = tk.BooleanVar(value=True)
         same_kwargs: dict[str, Any] = {
@@ -1099,7 +1235,9 @@ Troubleshooting:
         }
         if USING_TTKBOOTSTRAP:
             same_kwargs["bootstyle"] = "success-round-toggle"
-        ttk.Checkbutton(left_col, **same_kwargs).pack(anchor=W, pady=5)
+        same_btn = ttk.Checkbutton(left_col, **same_kwargs)
+        same_btn.pack(anchor=W, pady=5)
+        self._crawl_advanced_widgets.append(same_btn)
 
         self.include_assets_var = tk.BooleanVar(value=False)
         assets_kwargs: dict[str, Any] = {
@@ -1108,7 +1246,9 @@ Troubleshooting:
         }
         if USING_TTKBOOTSTRAP:
             assets_kwargs["bootstyle"] = "success-round-toggle"
-        ttk.Checkbutton(left_col, **assets_kwargs).pack(anchor=W, pady=5)
+        assets_btn = ttk.Checkbutton(left_col, **assets_kwargs)
+        assets_btn.pack(anchor=W, pady=5)
+        self._crawl_advanced_widgets.append(assets_btn)
 
         self.generate_pdf_var = tk.BooleanVar(value=False)
         pdf_kwargs: dict[str, Any] = {
@@ -1117,7 +1257,9 @@ Troubleshooting:
         }
         if USING_TTKBOOTSTRAP:
             pdf_kwargs["bootstyle"] = "success-round-toggle"
-        ttk.Checkbutton(left_col, **pdf_kwargs).pack(anchor=W, pady=5)
+        pdf_btn = ttk.Checkbutton(left_col, **pdf_kwargs)
+        pdf_btn.pack(anchor=W, pady=5)
+        self._crawl_advanced_widgets.append(pdf_btn)
 
         # Performance settings
         right_col = ttk.Frame(crawl_opts_frame)
@@ -1128,40 +1270,46 @@ Troubleshooting:
         workers_frame.pack(fill=X, pady=5)
         ttk.Label(workers_frame, text="Workers:", width=15).pack(side=LEFT)
         self.workers_var = tk.IntVar(value=1)
-        ttk.Spinbox(
+        workers_spin = ttk.Spinbox(
             workers_frame,
             from_=1,
             to=10,
             textvariable=self.workers_var,
             width=10,
-        ).pack(side=LEFT)
+        )
+        workers_spin.pack(side=LEFT)
+        self._crawl_advanced_widgets.append(workers_spin)
 
         # Delay
         delay_frame = ttk.Frame(right_col)
         delay_frame.pack(fill=X, pady=5)
         ttk.Label(delay_frame, text="Delay (ms):", width=15).pack(side=LEFT)
         self.delay_var = tk.IntVar(value=3000)
-        ttk.Spinbox(
+        delay_spin = ttk.Spinbox(
             delay_frame,
             from_=0,
             to=60000,
             increment=500,
             textvariable=self.delay_var,
             width=10,
-        ).pack(side=LEFT)
+        )
+        delay_spin.pack(side=LEFT)
+        self._crawl_advanced_widgets.append(delay_spin)
 
         # Max depth
         depth_frame = ttk.Frame(right_col)
         depth_frame.pack(fill=X, pady=5)
         ttk.Label(depth_frame, text="Max Depth:", width=15).pack(side=LEFT)
         self.max_depth_var = tk.IntVar(value=1)
-        ttk.Spinbox(
+        depth_spin = ttk.Spinbox(
             depth_frame,
             from_=0,
             to=10,
             textvariable=self.max_depth_var,
             width=10,
-        ).pack(side=LEFT)
+        )
+        depth_spin.pack(side=LEFT)
+        self._crawl_advanced_widgets.append(depth_spin)
         ttk.Label(depth_frame, text="(0 = unlimited)", font=("Segoe UI", 8)).pack(
             side=LEFT,
             padx=5,
@@ -1172,14 +1320,16 @@ Troubleshooting:
         pages_frame.pack(fill=X, pady=5)
         ttk.Label(pages_frame, text="Max Pages:", width=15).pack(side=LEFT)
         self.max_pages_var = tk.IntVar(value=25)
-        ttk.Spinbox(
+        pages_spin = ttk.Spinbox(
             pages_frame,
             from_=0,
             to=10000,
             increment=10,
             textvariable=self.max_pages_var,
             width=10,
-        ).pack(side=LEFT)
+        )
+        pages_spin.pack(side=LEFT)
+        self._crawl_advanced_widgets.append(pages_spin)
         ttk.Label(pages_frame, text="(0 = unlimited)", font=("Segoe UI", 8)).pack(
             side=LEFT,
             padx=5,
@@ -1207,6 +1357,7 @@ Troubleshooting:
         )
         self.cookie_combo.pack(side=LEFT, fill=X, expand=YES, padx=10)
         self.cookie_combo.current(0)
+        self._crawl_advanced_widgets.append(self.cookie_combo)
 
         refresh_cookie_kwargs: dict[str, Any] = {
             "text": "🔄 Refresh",
@@ -1214,7 +1365,9 @@ Troubleshooting:
         }
         if USING_TTKBOOTSTRAP:
             refresh_cookie_kwargs["bootstyle"] = "secondary-outline"
-        ttk.Button(cookie_select_frame, **refresh_cookie_kwargs).pack(side=LEFT)
+        cookie_refresh_btn = ttk.Button(cookie_select_frame, **refresh_cookie_kwargs)
+        cookie_refresh_btn.pack(side=LEFT)
+        self._crawl_advanced_widgets.append(cookie_refresh_btn)
 
         # Rendered content capture options
         render_frame = ttk.LabelFrame(
@@ -1231,7 +1384,9 @@ Troubleshooting:
         }
         if USING_TTKBOOTSTRAP:
             render_js_kwargs["bootstyle"] = "info-round-toggle"
-        ttk.Checkbutton(render_frame, **render_js_kwargs).pack(anchor=W, pady=5)
+        render_js_btn = ttk.Checkbutton(render_frame, **render_js_kwargs)
+        render_js_btn.pack(anchor=W, pady=5)
+        self._crawl_advanced_widgets.append(render_js_btn)
 
         render_grid = ttk.Frame(render_frame)
         render_grid.pack(fill=X, pady=5)
@@ -1251,7 +1406,10 @@ Troubleshooting:
         ]
         for row_index, (label, variable) in enumerate(render_fields):
             ttk.Label(render_grid, text=label, width=18).grid(row=row_index // 2, column=(row_index % 2) * 2, sticky=W, padx=5, pady=3)
-            ttk.Entry(render_grid, textvariable=variable, width=28).grid(row=row_index // 2, column=(row_index % 2) * 2 + 1, sticky=EW, padx=5, pady=3)
+            entry = ttk.Entry(render_grid, textvariable=variable, width=28)
+            entry.grid(row=row_index // 2, column=(row_index % 2) * 2 + 1, sticky=EW, padx=5, pady=3)
+            # The selector fields stay enabled in knowledge mode; only the
+            # crawl-specific widgets above are disabled in live mode.
 
         self.save_structured_content_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
@@ -1267,6 +1425,10 @@ Troubleshooting:
         if USING_TTKBOOTSTRAP:
             test_selectors_kwargs["bootstyle"] = "info-outline"
         ttk.Button(render_frame, **test_selectors_kwargs).pack(anchor=W, pady=5)
+
+        # Now that all widgets exist, apply the initial mode so disable/enable
+        # state matches the default radio selection.
+        self._apply_crawl_mode()
 
         # Progress section
         progress_frame = ttk.LabelFrame(
@@ -1328,6 +1490,46 @@ Troubleshooting:
             textvariable=self.elapsed_time_var,
             font=("Segoe UI", 11, "bold"),
         ).pack(side=LEFT, padx=20)
+
+    def _apply_crawl_mode(self) -> None:
+        """Enable/disable widgets based on the selected mode.
+
+        Live Sync ignores almost every setting — the browser is already on
+        the page, so cookies/depth/workers/render selectors are irrelevant.
+        Disable them visually so the user understands that.
+        """
+        mode = self.crawl_mode_var.get()
+        live = mode == "live"
+
+        for widget in getattr(self, "_crawl_advanced_widgets", []):
+            try:
+                if isinstance(widget, ttk.Combobox):
+                    widget.configure(state="disabled" if live else "readonly")
+                else:
+                    widget.configure(state=DISABLED if live else NORMAL)
+            except tk.TclError:
+                pass
+
+        if hasattr(self, "start_crawl_btn"):
+            label = "🔴 Sync This Page" if live else "▶️ Start Clone / Crawl"
+            try:
+                self.start_crawl_btn.configure(text=label)
+            except tk.TclError:
+                pass
+
+        if hasattr(self, "_live_banner_var"):
+            if live:
+                browser_state = (
+                    "Browser is ready."
+                    if self.selenium_service and self.selenium_service.driver
+                    else "No active browser — open one from the Authentication tab first."
+                )
+                self._live_banner_var.set(
+                    f"Live Sync: I'll copy whatever page the browser is showing now. "
+                    f"{browser_state}"
+                )
+            else:
+                self._live_banner_var.set("")
 
     def _sync_url_from_browser(self) -> None:
         """Sync URL from current browser session."""
@@ -1867,6 +2069,10 @@ Troubleshooting:
 
     def _start_crawl(self) -> None:
         """Start the crawl in a background thread."""
+        if getattr(self, "crawl_mode_var", None) and self.crawl_mode_var.get() == "live":
+            self._run_live_sync()
+            return
+
         url = self.crawl_url_var.get()
         logger.info(f"Starting crawl for URL: {url}")
 
@@ -1908,6 +2114,49 @@ Troubleshooting:
 
         # Start progress updater
         self._update_progress()
+
+    def _run_live_sync(self) -> None:
+        """Snapshot the page currently shown in the live Selenium browser.
+
+        This is the Live Sync mode: no crawl config, no network request from
+        webclone — we just dump whatever the user is looking at right now.
+        Useful for content the user reached by clicking around after login.
+        """
+        service = self.selenium_service
+        if service is None or service.driver is None:
+            messagebox.showwarning(
+                "No browser",
+                "Live Sync needs an active browser. Open one from the "
+                "Authentication tab, log in if needed, then come back here.",
+            )
+            return
+
+        try:
+            output_dir = Path(self.output_dir_var.get() or "./website_mirror")
+            self.crawl_status_var.set(f"Syncing current browser page → {output_dir}")
+            report = service.capture_current_page(output_dir)
+        except Exception as exc:
+            logger.exception("Live sync failed")
+            messagebox.showerror("Live Sync failed", str(exc))
+            self.crawl_status_var.set("Live Sync failed — see logs.")
+            return
+
+        items = int(report.get("item_count") or 0)
+        labels = int(report.get("label_count") or 0)
+        final_url = report.get("final_url") or ""
+        self.crawl_status_var.set(
+            f"Live Sync done · {items} items · {labels} labels · {final_url}"
+        )
+        self.pages_crawled_var.set("Pages: 1")
+        self.progress_var.set(100.0)
+        messagebox.showinfo(
+            "Live Sync complete",
+            f"Captured {items} structured items from:\n{final_url}\n\n"
+            f"Files saved under: {output_dir}\n"
+            "  • page.rendered.html\n"
+            "  • structured_content.json\n"
+            "  • render_debug_report.json",
+        )
 
     def _run_crawl_async(self) -> None:
         """Run the async crawl in a cancellable background thread."""
