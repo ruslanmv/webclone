@@ -82,6 +82,7 @@ except RuntimeError:
 
 from webclone.core.crawler import AsyncCrawler
 from webclone.core.content_extractor import extract_content_items
+from webclone.core.live_recorder import LiveRecorder
 from webclone.core.rendered_fetcher import RenderedFetcher
 from webclone.models.config import CrawlConfig, SeleniumConfig
 from webclone.models.metadata import CrawlResult
@@ -1088,13 +1089,11 @@ Troubleshooting:
                 "🧪 Knowledge Page",
                 "Single page → structured_content.json for RAG / study sets.",
             ),
-            (
-                "live",
-                "🔴 Live Sync (clone what you are surfing)",
-                "Snapshot the page currently shown in the Selenium browser — "
-                "perfect for content you paid for and reached after login.",
-            ),
         ]
+        # The third workflow — recording every page the user browses to — is
+        # exposed as a dedicated "🔴 Start Live Recording" button below, not
+        # a radio mode, because it isn't a crawl: it's a recorder that runs
+        # alongside the user as they surf.
         for value, label, hint in mode_options:
             radio_kwargs: dict[str, Any] = {
                 "text": label,
@@ -1201,6 +1200,21 @@ Troubleshooting:
             stop_btn_kwargs["style"] = "Large.TButton"
         self.stop_crawl_btn = ttk.Button(control_frame, **stop_btn_kwargs)
         self.stop_crawl_btn.pack(side=LEFT, padx=10)
+
+        # Always-visible Live Sync action: copies whatever page the user is
+        # currently viewing in the Selenium browser, regardless of the radio
+        # mode above. Independent of the crawler, so it works even if the
+        # other settings are wrong.
+        live_btn_kwargs: dict[str, Any] = {
+            "text": "🔴 Start Live Recording",
+            "command": self._run_live_sync,
+            "width": 28,
+        }
+        if USING_TTKBOOTSTRAP:
+            live_btn_kwargs["bootstyle"] = "info"
+            live_btn_kwargs["style"] = "Large.TButton"
+        self.live_sync_btn = ttk.Button(control_frame, **live_btn_kwargs)
+        self.live_sync_btn.pack(side=LEFT, padx=10)
 
         # Advanced settings
         advanced_frame = ttk.LabelFrame(
@@ -1492,44 +1506,27 @@ Troubleshooting:
         ).pack(side=LEFT, padx=20)
 
     def _apply_crawl_mode(self) -> None:
-        """Enable/disable widgets based on the selected mode.
+        """Toggle widget visibility based on the selected crawl mode.
 
-        Live Sync ignores almost every setting — the browser is already on
-        the page, so cookies/depth/workers/render selectors are irrelevant.
-        Disable them visually so the user understands that.
+        Knowledge Page mode is single-page-only, so the recursive/depth/page
+        knobs make no sense. Hide them by disabling. Standard restores all.
         """
         mode = self.crawl_mode_var.get()
-        live = mode == "live"
+        knowledge_only = mode == "knowledge"
 
         for widget in getattr(self, "_crawl_advanced_widgets", []):
             try:
                 if isinstance(widget, ttk.Combobox):
-                    widget.configure(state="disabled" if live else "readonly")
+                    widget.configure(state="disabled" if knowledge_only else "readonly")
                 else:
-                    widget.configure(state=DISABLED if live else NORMAL)
-            except tk.TclError:
-                pass
-
-        if hasattr(self, "start_crawl_btn"):
-            label = "🔴 Sync This Page" if live else "▶️ Start Clone / Crawl"
-            try:
-                self.start_crawl_btn.configure(text=label)
+                    widget.configure(
+                        state=DISABLED if knowledge_only else NORMAL
+                    )
             except tk.TclError:
                 pass
 
         if hasattr(self, "_live_banner_var"):
-            if live:
-                browser_state = (
-                    "Browser is ready."
-                    if self.selenium_service and self.selenium_service.driver
-                    else "No active browser — open one from the Authentication tab first."
-                )
-                self._live_banner_var.set(
-                    f"Live Sync: I'll copy whatever page the browser is showing now. "
-                    f"{browser_state}"
-                )
-            else:
-                self._live_banner_var.set("")
+            self._live_banner_var.set("")
 
     def _sync_url_from_browser(self) -> None:
         """Sync URL from current browser session."""
@@ -2069,10 +2066,6 @@ Troubleshooting:
 
     def _start_crawl(self) -> None:
         """Start the crawl in a background thread."""
-        if getattr(self, "crawl_mode_var", None) and self.crawl_mode_var.get() == "live":
-            self._run_live_sync()
-            return
-
         url = self.crawl_url_var.get()
         logger.info(f"Starting crawl for URL: {url}")
 
@@ -2116,12 +2109,20 @@ Troubleshooting:
         self._update_progress()
 
     def _run_live_sync(self) -> None:
-        """Snapshot the page currently shown in the live Selenium browser.
+        """Toggle the Live Sync recorder on/off.
 
-        This is the Live Sync mode: no crawl config, no network request from
-        webclone — we just dump whatever the user is looking at right now.
-        Useful for content the user reached by clicking around after login.
+        Live Sync is a continuous recorder: once started, every time the
+        user navigates to a new page in the Selenium browser it gets
+        snapshotted into its own subfolder. Clicking the button again
+        stops the recorder and writes a final manifest.
         """
+        recorder = getattr(self, "live_recorder", None)
+        if recorder is not None and recorder.is_running():
+            self._stop_live_recording()
+        else:
+            self._start_live_recording()
+
+    def _start_live_recording(self) -> None:
         service = self.selenium_service
         if service is None or service.driver is None:
             messagebox.showwarning(
@@ -2131,32 +2132,114 @@ Troubleshooting:
             )
             return
 
+        output_dir = Path(self.output_dir_var.get() or "./website_mirror")
+        self.live_recorder = LiveRecorder(service, output_dir)
         try:
-            output_dir = Path(self.output_dir_var.get() or "./website_mirror")
-            self.crawl_status_var.set(f"Syncing current browser page → {output_dir}")
-            report = service.capture_current_page(output_dir)
-        except Exception as exc:
-            logger.exception("Live sync failed")
-            messagebox.showerror("Live Sync failed", str(exc))
-            self.crawl_status_var.set("Live Sync failed — see logs.")
+            self.live_recorder.start()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Could not start Live Recorder")
+            messagebox.showerror("Live Sync", f"Could not start recorder:\n{exc}")
             return
 
-        items = int(report.get("item_count") or 0)
-        labels = int(report.get("label_count") or 0)
-        final_url = report.get("final_url") or ""
+        # Reflect recording state in the UI. Disable Start Crawl so the
+        # user can't kick off a regular crawl mid-recording; enable Stop so
+        # the same Stop button halts the recorder too.
+        self._set_live_button_recording(True)
+        for btn_name, state in (
+            ("start_crawl_btn", DISABLED),
+            ("stop_crawl_btn", NORMAL),
+        ):
+            btn = getattr(self, btn_name, None)
+            if btn is not None:
+                try:
+                    btn.configure(state=state)
+                except tk.TclError:
+                    pass
+
+        self.progress_var.set(0.0)
+        self.pages_crawled_var.set("Pages: 0")
         self.crawl_status_var.set(
-            f"Live Sync done · {items} items · {labels} labels · {final_url}"
+            "🔴 Recording… browse freely; each new page is captured automatically."
         )
-        self.pages_crawled_var.set("Pages: 1")
-        self.progress_var.set(100.0)
-        messagebox.showinfo(
-            "Live Sync complete",
-            f"Captured {items} structured items from:\n{final_url}\n\n"
-            f"Files saved under: {output_dir}\n"
-            "  • page.rendered.html\n"
-            "  • structured_content.json\n"
-            "  • render_debug_report.json",
+        self._schedule_recorder_status_tick()
+
+    def _stop_live_recording(self) -> None:
+        recorder: LiveRecorder | None = getattr(self, "live_recorder", None)
+        if recorder is None:
+            return
+        try:
+            recorder.stop()
+        except Exception:  # noqa: BLE001
+            logger.exception("Error stopping Live Recorder")
+
+        self._set_live_button_recording(False)
+        snap = recorder.snapshot()
+        count = snap["count"]
+        session_dir = snap["session_dir"]
+        self.crawl_status_var.set(
+            f"⏹️ Stopped · {count} page(s) recorded → {session_dir}"
         )
+        # Restore the regular crawl buttons.
+        for btn_name, state in (
+            ("start_crawl_btn", NORMAL),
+            ("stop_crawl_btn", DISABLED if not self.is_crawling else NORMAL),
+        ):
+            btn = getattr(self, btn_name, None)
+            if btn is not None:
+                try:
+                    btn.configure(state=state)
+                except tk.TclError:
+                    pass
+        if snap["error"]:
+            messagebox.showwarning(
+                "Recorder stopped with errors",
+                f"Captured {count} page(s) but hit an error:\n{snap['error']}\n\n"
+                f"Files are still in:\n{session_dir}",
+            )
+        else:
+            messagebox.showinfo(
+                "Recording complete",
+                f"Captured {count} page(s).\n\n"
+                f"Each page is saved under:\n{session_dir}\n\n"
+                "Open `manifest.json` for the full index, or each subfolder for\n"
+                "page.rendered.html, structured_content.json, render_debug_report.json.",
+            )
+
+    def _set_live_button_recording(self, recording: bool) -> None:
+        if not hasattr(self, "live_sync_btn"):
+            return
+        try:
+            if recording:
+                kwargs: dict[str, Any] = {"text": "⏹️ Stop Recording"}
+                if USING_TTKBOOTSTRAP:
+                    kwargs["bootstyle"] = "danger"
+                    kwargs["style"] = "Large.TButton"
+                self.live_sync_btn.configure(**kwargs)
+            else:
+                kwargs = {"text": "🔴 Start Live Recording"}
+                if USING_TTKBOOTSTRAP:
+                    kwargs["bootstyle"] = "info"
+                    kwargs["style"] = "Large.TButton"
+                self.live_sync_btn.configure(**kwargs)
+        except tk.TclError:
+            pass
+
+    def _schedule_recorder_status_tick(self) -> None:
+        """Poll the recorder once per second and refresh the status line."""
+        recorder: LiveRecorder | None = getattr(self, "live_recorder", None)
+        if recorder is None or not recorder.is_running():
+            return
+        snap = recorder.snapshot()
+        last = snap["last_url"] or "(waiting for page load…)"
+        self.crawl_status_var.set(
+            f"🔴 Recording · {snap['count']} captured · last: {last}"
+        )
+        self.pages_crawled_var.set(f"Pages: {snap['count']}")
+        if snap["error"]:
+            # Surface errors immediately but keep recording — the user can
+            # decide whether to stop.
+            logger.warning("Live recorder reported error: %s", snap["error"])
+        self.root.after(1000, self._schedule_recorder_status_tick)
 
     def _run_crawl_async(self) -> None:
         """Run the async crawl in a cancellable background thread."""
@@ -2278,7 +2361,15 @@ Troubleshooting:
         self.root.after(500, self._update_progress)
 
     def _stop_crawl(self) -> None:
-        """Stop the current crawl."""
+        """Stop the current crawl or the Live Sync recorder, whichever is active."""
+        # Live Sync uses the same Stop button so the user only has to remember
+        # one control to halt whatever is in progress.
+        recorder: LiveRecorder | None = getattr(self, "live_recorder", None)
+        if recorder is not None and recorder.is_running():
+            logger.info("Stopping Live Sync recorder")
+            self._stop_live_recording()
+            return
+
         logger.info("Stopping crawl")
         self.crawl_status_var.set("⏳ Stopping crawler...")
         self.stop_crawl_btn.configure(state=DISABLED)

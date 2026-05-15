@@ -141,6 +141,7 @@ install-gui: uv-ensure ## Install with GUI dependencies
 
 gui: ## Launch the Enterprise Desktop GUI
 	@echo "$(BLUE)🎨 Starting WebClone Enterprise Desktop GUI...$(NC)"
+	@find src -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
 	$(PYTHON) webclone-gui.py
 
 gui-dev: uv-ensure ## Launch GUI with dev dependencies
