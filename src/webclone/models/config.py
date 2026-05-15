@@ -29,7 +29,10 @@ class SeleniumConfig(BaseSettings):
     disable_gpu: bool = Field(default=True, description="Disable GPU acceleration")
     window_size: str = Field(default="1920,1080", description="Browser window size")
     user_agent: str | None = Field(
-        default="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+        default=(
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        ),
         description="Custom user agent",
     )
     timeout: int = Field(default=30, ge=5, le=120, description="Page load timeout")
@@ -110,6 +113,22 @@ class CrawlConfig(BaseSettings):
     cookie_file: Path | None = Field(
         default=None,
         description="Optional Selenium cookie JSON file for authenticated crawling",
+    )
+    extra_cookies: dict[str, str] = Field(
+        default_factory=dict,
+        description="Ad-hoc cookies (name=value) added to every request",
+    )
+    extra_headers: dict[str, str] = Field(
+        default_factory=dict,
+        description="Extra HTTP headers added to every request",
+    )
+    auto_unlock_static_cookie_gate: bool = Field(
+        default=True,
+        description=(
+            "Detect JS interstitials that set a static cookie and reload, then "
+            "apply the cookie automatically. On by default; pass --no-detect-gates "
+            "(or set this to False) to opt out."
+        ),
     )
     render_js: bool = Field(
         default=False,

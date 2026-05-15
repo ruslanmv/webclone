@@ -216,6 +216,41 @@ class SeleniumService:
 
         return self.driver.page_source
 
+    def capture_current_page(
+        self,
+        output_dir: Path,
+        selectors: "CaptureSelectors | None" = None,
+    ) -> dict[str, object]:
+        """Snapshot whatever the live browser is currently showing.
+
+        Reads the DOM the user is looking at — after any login, pagination,
+        or in-app navigation — and writes the same set of files the crawler
+        produces. Use this from the GUI's "Sync current page" button.
+
+        Returns the debug report dict so the caller can show item counts.
+        """
+        if not self.driver:
+            raise RuntimeError("Driver not started")
+
+        from webclone.core.page_capture import CaptureSelectors, capture_rendered_page
+
+        html = self.driver.execute_script(
+            "return document.documentElement.outerHTML;"
+        ) or ""
+        body_text = self.driver.execute_script(
+            "return document.body ? document.body.innerText : '';"
+        ) or ""
+        return capture_rendered_page(
+            html=str(html),
+            url=self.driver.current_url,
+            output_dir=output_dir,
+            selectors=selectors,
+            title=self.driver.title,
+            final_url=self.driver.current_url,
+            body_text=str(body_text),
+            rendered_with_js=True,
+        )
+
     def save_pdf(self, output_path: Path) -> None:
         """Save current page as PDF.
 

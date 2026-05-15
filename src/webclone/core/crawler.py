@@ -1,7 +1,6 @@
 """Async web crawler with intelligent queue management."""
 
 import asyncio
-import json
 import random
 import sys
 import time
@@ -14,12 +13,13 @@ import aiofiles
 import aiohttp
 from bs4 import BeautifulSoup
 
-from webclone.core.content_extractor import extract_content_items
 from webclone.core.downloader import AssetDownloader
+from webclone.core.gate_probe import extract_gate_cookies, probe_for_gate
+from webclone.core.page_capture import CaptureSelectors, capture_rendered_page
 from webclone.core.rendered_fetcher import RenderedFetcher
 from webclone.models.config import CrawlConfig
 from webclone.models.metadata import CrawlResult, PageMetadata
-from webclone.security.cookies import build_cookie_jar
+from webclone.security.cookies import add_pairs_to_jar, build_cookie_jar
 from webclone.utils.helpers import is_same_domain, safe_filename
 from webclone.utils.logger import get_logger
 from webclone.utils.security import is_safe_http_url, normalize_url
@@ -76,12 +76,24 @@ class AsyncCrawler:
             self.config.cookie_file,
             str(self.config.start_url),
         )
+        added = add_pairs_to_jar(
+            cookie_jar,
+            self.config.extra_cookies,
+            str(self.config.start_url),
+        )
+        if added:
+            logger.info("Loaded %s ad-hoc cookie(s) from config", added)
+
+        headers = {
+            "User-Agent": self.config.selenium.user_agent or "WebClone/1.0",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        if self.config.extra_headers:
+            headers.update(self.config.extra_headers)
+
         self.session = aiohttp.ClientSession(
-            headers={
-                "User-Agent": self.config.selenium.user_agent or "WebClone/1.0",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.9",
-            },
+            headers=headers,
             cookie_jar=cookie_jar,
         )
         self.downloader = AssetDownloader(self.config, self.session)
@@ -146,10 +158,34 @@ class AsyncCrawler:
                         self.too_many_requests_count += 1
                         retry_after = response.headers.get("Retry-After")
                         delay = self._backoff_delay(attempt, retry_after)
+
+                        # The site may rotate the gate cookie between requests.
+                        # Re-extract from this 429 response before retrying.
+                        unlocked = False
+                        if self.config.auto_unlock_static_cookie_gate:
+                            body = await response.text(errors="replace")
+                            fresh = extract_gate_cookies(body)
+                            if fresh:
+                                add_pairs_to_jar(
+                                    self.session.cookie_jar, fresh, url
+                                )
+                                self.gate_evidence = (
+                                    f"rotated cookies {sorted(fresh)} applied "
+                                    f"on attempt {attempt + 1}"
+                                )
+                                logger.info(
+                                    "Re-extracted gate cookies %s from 429 "
+                                    "response on attempt %s",
+                                    sorted(fresh),
+                                    attempt + 1,
+                                )
+                                unlocked = True
+
                         warning = (
                             f"429 Too Many Requests for {url}. "
                             f"Attempt {attempt + 1}/{self.config.max_retries + 1}. "
                             f"Waiting {delay:.1f}s."
+                            + (" (gate cookie refreshed)" if unlocked else "")
                         )
                         logger.warning(warning)
                         self.result.add_error(warning)
@@ -165,7 +201,10 @@ class AsyncCrawler:
                         if attempt >= self.config.max_retries:
                             return None, status
 
-                        await asyncio.sleep(delay)
+                        # When we just refreshed the cookie, mirror the
+                        # browser's short reload pause instead of waiting the
+                        # full exponential-backoff delay.
+                        await asyncio.sleep(min(delay, 1.0) if unlocked else delay)
                         continue
 
                     response.raise_for_status()
@@ -203,6 +242,20 @@ class AsyncCrawler:
             f"max_depth={self.config.max_depth}, "
             f"workers={self.config.workers}"
         )
+
+        self.gate_evidence: str | None = None
+        if self.config.auto_unlock_static_cookie_gate and self.session is not None:
+            gate = await probe_for_gate(self.session, start_url)
+            if gate is not None:
+                add_pairs_to_jar(self.session.cookie_jar, gate.cookies, start_url)
+                self.gate_evidence = (
+                    f"HTTP {gate.status_code}; applied {sorted(gate.cookies)}; "
+                    f"body[:200]={gate.evidence}"
+                )
+                # Mirror what a real browser does: the JS interstitial waits
+                # ~600ms before reloading. Cloudflare's rate limiter may
+                # otherwise 429 a back-to-back retry from the same client.
+                await asyncio.sleep(1.0)
 
         self.queue.append((start_url, 0))
         self.queued.add(start_url)
@@ -296,7 +349,7 @@ class AsyncCrawler:
                 async with aiofiles.open(html_path, "w", encoding="utf-8") as f:
                     await f.write(html)
 
-                if rendered is not None and self.config.save_structured_content:
+                if self.config.save_structured_content:
                     await self._save_rendered_content_outputs(html, rendered)
 
                 assets = []
@@ -376,54 +429,31 @@ class AsyncCrawler:
     async def _save_rendered_content_outputs(
         self,
         html: str,
-        rendered: dict[str, object],
+        rendered: dict[str, object] | None,
     ) -> None:
-        """Save rendered HTML, structured content JSON, and a debug report."""
-        content_items = extract_content_items(
-            html,
-            item_selector=self.config.item_selector,
-            item_text_selector=self.config.item_text_selector,
-            option_selector=self.config.option_selector,
-            detail_selector=self.config.detail_selector,
-            label_selector=self.config.label_selector,
-        )
-        body_text = str(rendered.get("body_text") or "")
-        login_markers = ("login", "sign in", "please log in", "register", "upgrade")
-        final_url = str(rendered.get("final_url") or "")
-        login_text_detected = any(marker in body_text.lower() for marker in login_markers)
-        auth_likely_failed = login_text_detected or any(
-            marker in final_url.lower() for marker in login_markers
-        )
+        """Save rendered HTML, structured content JSON, and a debug report.
 
-        report = {
-            "url": rendered.get("url"),
-            "final_url": final_url,
-            "final_url_before_clicks": rendered.get("final_url_before_clicks"),
-            "title": rendered.get("title"),
-            "clicked_count": rendered.get("clicked_count"),
-            "item_count": len(content_items),
-            "detail_block_count": sum(1 for item in content_items if item["has_detail_block"]),
-            "label_count": sum(1 for item in content_items if item["label"]),
-            "body_text_length": rendered.get("body_text_length"),
-            "auth_likely_failed": auth_likely_failed,
-            "login_text_detected": login_text_detected,
-        }
-
-        self.config.output_dir.mkdir(parents=True, exist_ok=True)
-        await asyncio.gather(
-            asyncio.to_thread(
-                (self.config.output_dir / "page.rendered.html").write_text,
-                html,
-                encoding="utf-8",
-            ),
-            asyncio.to_thread(
-                (self.config.output_dir / "structured_content.json").write_text,
-                json.dumps(content_items, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            ),
-            asyncio.to_thread(
-                (self.config.output_dir / "render_debug_report.json").write_text,
-                json.dumps(report, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            ),
+        Works for both the Selenium-rendered path (rendered != None) and the
+        plain HTTP path (rendered is None), so cookie-gated public pages can be
+        structured without launching a browser.
+        """
+        rendered = rendered or {}
+        selectors = CaptureSelectors(
+            item=self.config.item_selector,
+            item_text=self.config.item_text_selector,
+            options=self.config.option_selector,
+            detail=self.config.detail_selector,
+            label=self.config.label_selector,
+        )
+        await asyncio.to_thread(
+            capture_rendered_page,
+            html=html,
+            url=str(rendered.get("url") or self.config.start_url),
+            output_dir=self.config.output_dir,
+            selectors=selectors,
+            title=str(rendered.get("title")) if rendered.get("title") else None,
+            final_url=str(rendered.get("final_url") or ""),
+            body_text=str(rendered.get("body_text") or ""),
+            gate_evidence=getattr(self, "gate_evidence", None),
+            rendered_with_js=bool(rendered),
         )
