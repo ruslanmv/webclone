@@ -2133,7 +2133,23 @@ Troubleshooting:
             return
 
         output_dir = Path(self.output_dir_var.get() or "./website_mirror")
-        self.live_recorder = LiveRecorder(service, output_dir)
+
+        # Tell the recorder which element(s) to watch for content changes.
+        # We start from the item selector the user configured for structured
+        # extraction (e.g. `.qa`) and broaden it slightly so we also catch
+        # cases where only inner option/answer text changes. The user can
+        # still override via the recorder's API; the default works for the
+        # exam-page family.
+        item_selector = (self.item_selector_var.get() or "").strip() or ".qa"
+        watch_selector = (
+            f"{item_selector}, {item_selector} .qa-question, "
+            f"{item_selector} .qa-options, main, article"
+        )
+        self.live_recorder = LiveRecorder(
+            service,
+            output_dir,
+            watch_selector=watch_selector,
+        )
         try:
             self.live_recorder.start()
         except Exception as exc:  # noqa: BLE001
@@ -2231,13 +2247,12 @@ Troubleshooting:
             return
         snap = recorder.snapshot()
         last = snap["last_url"] or "(waiting for page load…)"
+        rev = snap.get("last_revision", 0)
         self.crawl_status_var.set(
-            f"🔴 Recording · {snap['count']} captured · last: {last}"
+            f"🔴 Recording · {snap['count']} captured · DOM rev #{rev} · last: {last}"
         )
         self.pages_crawled_var.set(f"Pages: {snap['count']}")
         if snap["error"]:
-            # Surface errors immediately but keep recording — the user can
-            # decide whether to stop.
             logger.warning("Live recorder reported error: %s", snap["error"])
         self.root.after(1000, self._schedule_recorder_status_tick)
 

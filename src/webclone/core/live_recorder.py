@@ -1,20 +1,38 @@
 """Continuous "record while you surf" capture loop for the GUI Live Sync mode.
 
 Idea: while the user clicks around in a Selenium-controlled browser, a
-background thread polls the driver, and any time the URL changes OR the
-visible page content changes meaningfully, it snapshots the DOM into its
-own subfolder of the output directory. Clicking Stop ends the thread and
-leaves a manifest listing every capture.
+background thread polls the driver and any time the *content area we care
+about* changes, it snapshots the DOM into its own subfolder of the output
+directory. Clicking Stop ends the thread and leaves a manifest listing
+every capture.
 
-Why content-change detection matters: many paginated pages (especially
-SPAs and AJAX-driven exam dumps) advance to the "next question set"
-without changing the URL — or change only a `#fragment`. URL-only
-detection would miss every page after the first. We hash a fingerprint
-of the body text on each poll and capture whenever it changes.
+The hard cases this module handles:
 
-The recorder reuses `SeleniumService.capture_current_page`, so the on-disk
-artifacts are identical to single-shot Live Sync and to the CLI's
-`clone-knowledge-page` — just one set per visited page.
+1. URL changes (classic per-page navigation).
+2. URL is identical and only a `#fragment` toggles (some SPAs).
+3. URL never changes, AJAX swaps the visible content (exam dumps,
+   single-page question players, search-style listings).
+
+For (3), we can't rely on the URL or even on whole-page `innerText` —
+the page may be dominated by a livechat poller, a countdown timer, ads,
+or a stat-counter ping that re-renders every second. Hashing the whole
+body would either over-fire (timer ticks = "change") or under-fire
+(banner dominates relative to the QA content).
+
+So we inject a *MutationObserver* into the page on the very first poll.
+That observer:
+
+- watches only mutations under a configurable `watch_selector`
+  (default `.qa, .qa-options, .qa-question, main, article` — i.e. the
+  content area, not the chrome);
+- debounces bursts so a single navigation produces exactly one revision;
+- bumps a global revision counter `window.__wc_obs.rev` only when the
+  *text* of the watched elements actually changes;
+- survives stale Selenium re-execution because the bootstrap is
+  idempotent (`if (window.__wc_obs) return`).
+
+The recorder polls that revision counter. Each new revision triggers
+one capture into its own subfolder via SeleniumService.capture_current_page.
 """
 
 from __future__ import annotations
@@ -37,6 +55,79 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+# JavaScript that installs a MutationObserver on the watched content area.
+# Idempotent: re-running it is a no-op if the observer is already in place,
+# which lets us re-inject after a navigation without leaking observers.
+_INSTALL_OBSERVER_JS = r"""
+var watchSel = arguments[0];
+if (window.__wc_obs && window.__wc_obs.sel === watchSel) {
+  return { installed: true, reused: true };
+}
+try { if (window.__wc_obs && window.__wc_obs.disconnect) window.__wc_obs.disconnect(); }
+catch (e) {}
+
+function fingerprint() {
+  var els = document.querySelectorAll(watchSel);
+  if (!els || els.length === 0) {
+    return ((document.body && document.body.innerText) || '').slice(0, 200000);
+  }
+  var parts = [];
+  for (var i = 0; i < els.length; i++) {
+    var t = els[i].innerText || els[i].textContent || '';
+    parts.push(t.replace(/\s+/g, ' ').trim());
+  }
+  return parts.join('␞');
+}
+
+var initial = fingerprint();
+window.__wc_obs = {
+  sel: watchSel,
+  rev: 1,
+  snap: initial,
+  matched: document.querySelectorAll(watchSel).length,
+  _timer: null,
+  disconnect: function() { if (this._mo) this._mo.disconnect(); }
+};
+
+function recompute() {
+  var snap = fingerprint();
+  if (snap !== window.__wc_obs.snap) {
+    window.__wc_obs.snap = snap;
+    window.__wc_obs.rev += 1;
+    window.__wc_obs.matched = document.querySelectorAll(watchSel).length;
+  }
+}
+
+window.__wc_obs._mo = new MutationObserver(function() {
+  if (window.__wc_obs._timer) clearTimeout(window.__wc_obs._timer);
+  window.__wc_obs._timer = setTimeout(recompute, 200);
+});
+
+window.__wc_obs._mo.observe(document.body || document.documentElement, {
+  childList: true,
+  subtree: true,
+  characterData: true
+});
+
+return {
+  installed: true,
+  reused: false,
+  matched: window.__wc_obs.matched
+};
+"""
+
+# Cheap polling script — no DOM walk, just reads the observer state.
+_POLL_OBSERVER_JS = r"""
+return {
+  installed: !!window.__wc_obs,
+  rev: (window.__wc_obs && window.__wc_obs.rev) || 0,
+  matched: (window.__wc_obs && window.__wc_obs.matched) || 0,
+  url: location.href,
+  ready: document.readyState
+};
+"""
+
+
 @dataclass
 class Capture:
     """One captured page within a recording session."""
@@ -45,6 +136,7 @@ class Capture:
     url: str
     folder: Path
     item_count: int
+    revision: int = 0
     captured_at: float = field(default_factory=time.time)
 
 
@@ -62,16 +154,21 @@ def _normalize_url(url: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, parts.path, parts.query, parts.fragment))
 
 
-# Snippet length that's considered "meaningful" page content; anything shorter
-# is treated as a transient (blank tab, error stub) and ignored for hashing.
+# Default selector covers the common QA/listing/article shapes. The user can
+# override via the GUI or CLI when adapting to a different site layout.
+DEFAULT_WATCH_SELECTOR = ".qa, .qa-options, .qa-question, main, article"
+
+# Minimum content length to count a body-text fallback hash as meaningful.
 _MIN_CONTENT_LENGTH = 80
 
 
 class LiveRecorder:
-    """Background recorder that snapshots every page the user navigates to.
+    """Background recorder that snapshots every page-state the user reaches.
 
-    Thread-safe by design: the GUI thread only touches `captures`, `error`,
-    and the public methods; the worker thread owns all driver interactions.
+    Detection priority (per poll):
+      1. MutationObserver revision counter (precise, ignores timers/ads).
+      2. URL change.
+      3. Whole-body innerText hash (fallback if observer injection failed).
     """
 
     def __init__(
@@ -79,18 +176,21 @@ class LiveRecorder:
         service: SeleniumService,
         output_dir: Path,
         *,
-        poll_interval: float = 1.5,
+        poll_interval: float = 1.0,
         settle_after_load: float = 0.4,
+        watch_selector: str = DEFAULT_WATCH_SELECTOR,
     ) -> None:
         self.service = service
         self.session_dir = Path(output_dir) / "live_recording"
         self.poll_interval = poll_interval
         self.settle_after_load = settle_after_load
+        self.watch_selector = watch_selector
         self.captures: list[Capture] = []
         self.error: str | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._last_url: str | None = None
+        self._last_revision: int = 0
         self._last_content_hash: str | None = None
         self._lock = threading.Lock()
 
@@ -109,7 +209,11 @@ class LiveRecorder:
             daemon=True,
         )
         self._thread.start()
-        logger.info("Live recorder started; session dir = %s", self.session_dir)
+        logger.info(
+            "Live recorder started; session dir = %s; watch selector = %r",
+            self.session_dir,
+            self.watch_selector,
+        )
 
     def stop(self, timeout: float = 5.0) -> None:
         """Signal the recorder to stop and wait for the worker to finish."""
@@ -127,9 +231,8 @@ class LiveRecorder:
     # -- worker ------------------------------------------------------------
 
     def _loop(self) -> None:
-        # Always grab whatever is on screen the moment recording starts —
-        # otherwise a user who clicks Start while already on the target page
-        # would have to navigate away and back to get the first capture.
+        # Capture whatever is on screen the moment recording starts. Skip the
+        # observer-revision compare on the initial pass — it's always 1.
         self._try_capture(reason="initial")
         while not self._stop.is_set():
             self._stop.wait(self.poll_interval)
@@ -143,60 +246,77 @@ class LiveRecorder:
             self.error = "Browser is no longer available"
             self._stop.set()
             return
+
+        # Make sure the observer is in place. This is idempotent and also
+        # re-installs after a full-page navigation that wiped window globals.
         try:
-            current_url = driver.current_url
-            ready_state = driver.execute_script("return document.readyState")
-            # Pull body text once per poll. We don't need anything heavier than
-            # innerText — it changes when the visible questions/options change
-            # (which is exactly what we want to detect).
-            body_text = driver.execute_script(
-                "return (document.body && document.body.innerText) || '';"
-            ) or ""
+            driver.execute_script(_INSTALL_OBSERVER_JS, self.watch_selector)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Observer install failed: %s", exc)
+
+        # Cheap state read.
+        try:
+            state = driver.execute_script(_POLL_OBSERVER_JS) or {}
         except Exception as exc:  # noqa: BLE001
             logger.warning("Recorder poll failed: %s", exc)
             self.error = str(exc)
             return
 
+        if state.get("ready") != "complete":
+            return
+
+        current_url = str(state.get("url") or "")
         if not current_url:
             return
-        if ready_state != "complete":
-            return
 
+        revision = int(state.get("rev") or 0)
         normalized = _normalize_url(current_url)
-        content_hash = self._hash_content(str(body_text))
-
         url_changed = normalized != self._last_url
-        content_changed = (
-            content_hash is not None and content_hash != self._last_content_hash
-        )
+        revision_changed = revision != self._last_revision and revision > 0
 
-        # On the initial tick we always capture. Afterwards we capture if
-        # EITHER the URL changed OR the page content changed (covers AJAX
-        # pagination that leaves the URL untouched).
-        if reason == "poll" and not url_changed and not content_changed:
-            return
-
-        # Settle delay so dynamic content (XHR, lazy widgets) renders fully
-        # before we snapshot. Skip when we have no signal yet (initial tick).
-        if self.settle_after_load > 0 and (url_changed or content_changed):
-            self._stop.wait(self.settle_after_load)
-            if self._stop.is_set():
-                return
-            # Re-read content after the settle so the hash reflects the final DOM.
+        # Cheap fallback: whole-body hash, used only if the observer reports
+        # zero matched elements (selector didn't match anything on this page).
+        content_hash: str | None = None
+        if not state.get("installed") or state.get("matched") == 0:
             try:
                 body_text = driver.execute_script(
                     "return (document.body && document.body.innerText) || '';"
                 ) or ""
-                content_hash = self._hash_content(str(body_text))
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("Re-read after settle failed: %s", exc)
+            except Exception:  # noqa: BLE001
+                body_text = ""
+            content_hash = self._hash_content(str(body_text))
+        content_changed = (
+            content_hash is not None and content_hash != self._last_content_hash
+        )
 
-        self._capture(current_url, normalized, content_hash)
+        if reason == "poll" and not (url_changed or revision_changed or content_changed):
+            return
+
+        # Settle delay so dynamic content fully renders before we snapshot.
+        if self.settle_after_load > 0 and reason != "initial":
+            self._stop.wait(self.settle_after_load)
+            if self._stop.is_set():
+                return
+            # Re-read after settle so we record the final state.
+            try:
+                state2 = driver.execute_script(_POLL_OBSERVER_JS) or {}
+                revision = int(state2.get("rev") or revision)
+                current_url = str(state2.get("url") or current_url)
+                normalized = _normalize_url(current_url)
+            except Exception:  # noqa: BLE001
+                pass
+
+        self._capture(
+            url=current_url,
+            normalized_url=normalized,
+            revision=revision,
+            content_hash=content_hash,
+            matched=int(state.get("matched") or 0),
+        )
 
     @staticmethod
     def _hash_content(text: str) -> str | None:
         """Return a stable hash of meaningful page content, or None if too short."""
-        # Collapse whitespace so trivial reflows don't trigger captures.
         cleaned = " ".join(text.split())
         if len(cleaned) < _MIN_CONTENT_LENGTH:
             return None
@@ -204,17 +324,16 @@ class LiveRecorder:
 
     def _capture(
         self,
+        *,
         url: str,
         normalized_url: str,
+        revision: int,
         content_hash: str | None,
+        matched: int,
     ) -> None:
         with self._lock:
             index = len(self.captures) + 1
-            # If we already have an entry for this URL, suffix the folder so
-            # consecutive captures of the "same URL, different content"
-            # (the AJAX-pagination case) don't overwrite each other.
-            base_slug = _slug_for(url)
-            folder = self.session_dir / f"{index:03d}_{base_slug}"
+            folder = self.session_dir / f"{index:03d}_{_slug_for(url)}"
         try:
             report = self.service.capture_current_page(folder)
         except Exception as exc:  # noqa: BLE001
@@ -227,15 +346,20 @@ class LiveRecorder:
             url=url,
             folder=folder,
             item_count=int(report.get("item_count") or 0),
+            revision=revision,
         )
         with self._lock:
             self.captures.append(capture)
             self._last_url = normalized_url
-            self._last_content_hash = content_hash
+            self._last_revision = revision
+            if content_hash is not None:
+                self._last_content_hash = content_hash
         self._write_manifest()
         logger.info(
-            "Live recorder captured #%s %s (%s items) → %s",
+            "Live recorder captured #%s rev=%s matched=%s %s (%s items) → %s",
             capture.index,
+            revision,
+            matched,
             url,
             capture.item_count,
             folder,
@@ -251,7 +375,9 @@ class LiveRecorder:
                 "count": len(self.captures),
                 "last_url": last.url if last else None,
                 "last_items": last.item_count if last else 0,
+                "last_revision": last.revision if last else 0,
                 "session_dir": str(self.session_dir),
+                "watch_selector": self.watch_selector,
                 "error": self.error,
                 "running": self.is_running(),
             }
@@ -264,6 +390,7 @@ class LiveRecorder:
                     "url": c.url,
                     "folder": str(c.folder),
                     "item_count": c.item_count,
+                    "revision": c.revision,
                     "captured_at": c.captured_at,
                 }
                 for c in self.captures
@@ -275,4 +402,5 @@ class LiveRecorder:
             )
         except OSError as exc:
             logger.warning("Could not write recorder manifest: %s", exc)
+
 
