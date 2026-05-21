@@ -7,6 +7,7 @@ and rich formatting for an exceptional user experience.
 import asyncio
 import json
 from pathlib import Path
+from urllib.parse import urlparse
 
 import typer
 from rich.console import Console
@@ -67,6 +68,62 @@ def _build_selenium_config(user_agent: str | None) -> SeleniumConfig | None:
     if user_agent is None:
         return None
     return SeleniumConfig(user_agent=user_agent)
+
+
+def _domain_matches(cookie_domain: str, target_host: str) -> bool:
+    """Return True when a saved cookie's domain applies to the target host.
+
+    Cookie domains in the saved JSON files are typically the bare host
+    ('login.example.com') or the parent suffix ('.example.com'). A cookie
+    set on '.example.com' covers 'app.example.com' and 'example.com'.
+    """
+    if not cookie_domain or not target_host:
+        return False
+    cookie_domain = cookie_domain.lstrip(".").lower()
+    target_host = target_host.lower()
+    return target_host == cookie_domain or target_host.endswith("." + cookie_domain)
+
+
+def _autodiscover_cookie_file(url: str, cookies_dir: Path = Path("cookies")) -> Path | None:
+    """Find the best saved cookie file whose contents apply to ``url``.
+
+    Scans ``cookies/*.json``, reads each as a Selenium cookie list, and
+    picks the file with the most cookies that match the target host
+    (by exact domain or parent-suffix). Returns ``None`` if no file
+    contains a usable cookie. Picks the most-recently-modified file when
+    multiple files tie on cookie count, so re-saving a session always
+    wins.
+    """
+    if not cookies_dir.is_dir():
+        return None
+    try:
+        target_host = urlparse(url).hostname or ""
+    except Exception:
+        return None
+    if not target_host:
+        return None
+
+    best: tuple[int, float, Path] | None = None  # (matches, mtime, path)
+    for candidate in cookies_dir.glob("*.json"):
+        try:
+            with candidate.open("r", encoding="utf-8") as f:
+                cookies = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(cookies, list):
+            continue
+        matches = sum(
+            1
+            for c in cookies
+            if isinstance(c, dict) and _domain_matches(str(c.get("domain", "")), target_host)
+        )
+        if matches == 0:
+            continue
+        mtime = candidate.stat().st_mtime
+        score = (matches, mtime, candidate)
+        if best is None or score > best:
+            best = score
+    return best[2] if best else None
 
 
 def version_callback(value: bool) -> None:
@@ -220,6 +277,26 @@ def clone(
 
     # Display header
     _display_header()
+
+    # Auto-detection: if the user didn't pass --cookie-file, try to find a
+    # saved session in ./cookies/ whose domain matches the target URL.
+    # When we do auto-pick a cookie file, also turn on --render-js (unless
+    # the caller already passed --no-assets or explicitly disabled rendering)
+    # because authenticated targets are almost always JS-rendered SPAs.
+    auto_picked_cookie = False
+    if cookie_file is None:
+        discovered = _autodiscover_cookie_file(url)
+        if discovered is not None:
+            cookie_file = discovered
+            auto_picked_cookie = True
+            console.print(
+                f"[dim]🔎 Auto-detected session cookies:[/dim] [cyan]{cookie_file}[/cyan]"
+            )
+            if not render_js:
+                render_js = True
+                console.print(
+                    "[dim]🎬 Auto-enabling --render-js for authenticated target.[/dim]"
+                )
 
     # Create configuration
     try:

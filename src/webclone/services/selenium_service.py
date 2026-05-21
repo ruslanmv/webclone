@@ -1,6 +1,7 @@
 """Selenium service for dynamic page rendering and SPA support."""
 
 import base64
+import os
 import time
 from pathlib import Path
 from typing import Optional
@@ -56,6 +57,11 @@ class SeleniumService:
         """
         chrome_options = Options()
 
+        # Use 'eager' page-load strategy so commands don't block on slow
+        # third-party resources and we get fewer "loader has changed" races
+        # during multi-step redirects (e.g. SSO flows).
+        chrome_options.page_load_strategy = "eager"
+
         # Basic display configuration
         if self.config.headless:
             chrome_options.add_argument("--headless=new")
@@ -74,6 +80,30 @@ class SeleniumService:
         # Set realistic user agent
         if self.config.user_agent:
             chrome_options.add_argument(f"--user-agent={self.config.user_agent}")
+
+        # === VPN / CORPORATE PROXY COMPATIBILITY ===
+        # Inherit the OS-level proxy configuration so a system VPN (split-tunnel
+        # or full-tunnel) and any PAC scripts apply to the automated browser
+        # the same way they do for a normal Chrome window. We deliberately do
+        # NOT pass --no-proxy-server or a fixed --proxy-server; Chrome defaults
+        # to the system proxy resolver on macOS / Windows / Linux.
+        # Trust corporate MITM / self-signed certs that VPNs often inject.
+        # Without this, https endpoints behind the VPN fail with NET::ERR_*.
+        chrome_options.add_argument("--ignore-certificate-errors")
+        chrome_options.add_argument("--ignore-ssl-errors=yes")
+        # Honor an explicit proxy if the user sets one via env (HTTPS_PROXY etc).
+        proxy_env = (
+            os.environ.get("HTTPS_PROXY")
+            or os.environ.get("https_proxy")
+            or os.environ.get("HTTP_PROXY")
+            or os.environ.get("http_proxy")
+        )
+        if proxy_env:
+            chrome_options.add_argument(f"--proxy-server={proxy_env}")
+            no_proxy = os.environ.get("NO_PROXY") or os.environ.get("no_proxy")
+            if no_proxy:
+                chrome_options.add_argument(f"--proxy-bypass-list={no_proxy}")
+            logger.info(f"Using proxy from environment: {proxy_env}")
 
         # === STEALTH MODE: Bypass Bot Detection ===
         # Disable automation detection

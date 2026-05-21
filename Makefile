@@ -185,33 +185,33 @@ apply-patch: ## Apply a patch with whitespace cleanup and already-applied detect
 
 test: ## Run tests with pytest
 	@echo "$(BLUE)🧪 Running tests...$(NC)"
-	pytest tests/ -v --cov=src/webclone --cov-report=term-missing
+	$(VENV_BIN)/pytest tests/ -v --cov=src/webclone --cov-report=term-missing
 	@echo "$(GREEN)✓ Tests complete!$(NC)"
 
 test-fast: ## Run tests without coverage
 	@echo "$(BLUE)⚡ Running fast tests...$(NC)"
-	pytest tests/ -v --no-cov
+	$(VENV_BIN)/pytest tests/ -v --no-cov
 	@echo "$(GREEN)✓ Tests complete!$(NC)"
 
 lint: ## Run ruff linter
 	@echo "$(BLUE)🔍 Running ruff linter...$(NC)"
-	ruff check src/ tests/
+	$(VENV_BIN)/ruff check src/ tests/
 	@echo "$(GREEN)✓ Linting complete!$(NC)"
 
 format: ## Format code with ruff
 	@echo "$(BLUE)✨ Formatting code with ruff...$(NC)"
-	ruff format src/ tests/
-	ruff check --fix src/ tests/
+	$(VENV_BIN)/ruff format src/ tests/
+	$(VENV_BIN)/ruff check --fix src/ tests/
 	@echo "$(GREEN)✓ Code formatted!$(NC)"
 
 typecheck: ## Run mypy type checker
 	@echo "$(BLUE)🔬 Running mypy type checker...$(NC)"
-	mypy src/
+	$(VENV_BIN)/mypy src/
 	@echo "$(GREEN)✓ Type checking complete!$(NC)"
 
 audit: lint typecheck ## Run comprehensive quality checks (lint + typecheck + security)
 	@echo "$(BLUE)🔒 Running security audit with bandit...$(NC)"
-	bandit -r src/ -ll
+	$(VENV_BIN)/bandit -r src/ -ll
 	@echo "$(GREEN)✓ Security audit complete!$(NC)"
 	@echo ""
 	@echo "$(GREEN)✨ All quality checks passed!$(NC)"
@@ -265,7 +265,7 @@ publish: build ## Publish to PyPI (requires credentials)
 
 coverage: ## Generate HTML coverage report
 	@echo "$(BLUE)📊 Generating HTML coverage report...$(NC)"
-	pytest tests/ --cov=src/webclone --cov-report=html
+	$(VENV_BIN)/pytest tests/ --cov=src/webclone --cov-report=html
 	@echo "$(GREEN)✓ Coverage report generated in htmlcov/index.html$(NC)"
 	command -v open >/dev/null 2>&1 && open htmlcov/index.html || true
 
