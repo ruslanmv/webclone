@@ -30,6 +30,7 @@ def safe_filename(text: str, default: str = "page", max_length: int = 120) -> st
     # Remove non-word characters and replace with underscore
     text = re.sub(r"[^\w\-. ]+", "_", text)
     text = re.sub(r"\s+", "_", text)
+    text = text.strip("_")
 
     return (text or default)[:max_length]
 

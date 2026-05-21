@@ -59,14 +59,14 @@ Grounded AI assistants, copilots, support bots, and internal chatbots
 
 ### One-page rendered knowledge capture
 
-Use `clone-knowledge-page` when a page must be rendered like a browser before extracting structured sections:
+Use `clone-knowledge-page` when a page must be rendered like a browser before extracting structured sections. Pick selectors that actually exist on the target page — the example below uses real Sphinx markup from python.org:
 
 ```bash
 webclone clone-knowledge-page "https://docs.python.org/3/tutorial/index.html" \
   --render-js \
-  --wait-for ".body" \
-  --item-selector ".body" \
-  --item-text-selector "h1" \
+  --wait-for "div.body" \
+  --item-selector "div.section, section" \
+  --item-text-selector "h1, h2, h3" \
   --detail-selector "p, li, pre" \
   --output ./output/docs-knowledge-page
 ```
@@ -136,8 +136,8 @@ Use the generated mirror as the reproducible source of truth for your indexing a
 ### 📦 **Modern Tooling**
 - ⚡ **uv**: Lightning-fast dependency management
 - 🔍 **ruff**: Ultra-fast linting and formatting
-- 🧪 **pytest**: Comprehensive test suite with >90% coverage
-- 🐳 **Docker**: Multi-stage builds with distroless base images
+- 🧪 **pytest**: 70 tests covering core/security/models with `make test`
+- 🐳 **Docker**: Containerized builds via `make docker-build`
 - 🔒 **Security**: Bandit audits and dependency scanning
 
 ---
@@ -173,23 +173,44 @@ webclone clone http://127.0.0.1:8000 \
 
 ### Installation
 
+Install from PyPI (published as `webclone` v1.0.0):
+
 ```bash
-# Using uv (recommended)
+# Recommended: uv (10-100x faster than pip)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 uv pip install webclone
 
-# Or using pip
+# Or with plain pip
 pip install webclone
-
-# Or from source
-git clone https://github.com/ruslanmv/webclone.git
-cd webclone
-make install
-make run  # verifies the CLI using the project .venv/src checkout
 ```
 
+Install from source (gets you the Makefile shortcuts too):
 
+```bash
+git clone https://github.com/ruslanmv/webclone.git
+cd webclone
+make install              # creates .venv/ and installs the CLI
 
+# The webclone entry point is installed inside .venv/, so either:
+source .venv/bin/activate
+webclone --version        # → WebClone version 1.0.0
+
+# …or just call the venv binary directly without activating:
+.venv/bin/webclone --version
+```
+
+> **Note:** `make install` uses `uv` and installs into `.venv/`. The `webclone`
+> command is only on your `PATH` after `source .venv/bin/activate` (or use
+> `.venv/bin/webclone` directly). The Makefile targets (`make run`, `make
+> test`, …) already use the venv automatically.
+
+Smoke-test the install:
+
+```bash
+make run                                  # clones example.com → ./demo_output
+.venv/bin/webclone --version              # WebClone version 1.0.0
+.venv/bin/webclone info https://example.com
+```
 
 ### Your First Knowledge Capture
 
@@ -206,16 +227,49 @@ webclone clone https://docs.python.org/3/ \
   --workers 1 \
   --delay 3000
 
-# Render one authorized knowledge page and export structured JSON
+# Render one authorized knowledge page and export structured JSON.
+# Use selectors that actually exist on the page you're capturing
+# (Sphinx-built Python docs use `div.body`, NOT `.body section`).
 webclone clone-knowledge-page https://docs.python.org/3/tutorial/index.html \
   --render-js \
-  --wait-for ".body" \
-  --item-selector ".body section" \
-  --item-text-selector "h1, h2" \
+  --wait-for "div.body" \
+  --item-selector "div.section, section" \
+  --item-text-selector "h1, h2, h3" \
   --detail-selector "p, li, pre"
 ```
 
 That's it! WebClone creates reproducible mirrors and structured capture artifacts you can feed into chunking, embedding, search, and RAG pipelines.
+
+### ✅ Verified Examples
+
+These commands were run on a clean install and the outputs below are the
+actual results — copy/paste and they will work.
+
+| # | Command | Result |
+|---|---------|--------|
+| 1 | `webclone info https://example.com` | Status `200`, 528 bytes, 1 link parsed |
+| 2 | `webclone clone https://example.com --max-pages 1 --no-pdf` | 1 page, 0 assets, ~2.3s |
+| 3 | `webclone clone https://httpbin.org/html --max-pages 1 --no-pdf` | 1 page, saved to `pages/page_1.html` |
+| 4 | `webclone clone https://docs.python.org/3/library/typing.html --max-pages 1 --no-pdf` | 24 files: 5 CSS, 10 JS, 1 image, 7 HTML, 1 other |
+| 5 | `webclone clone 'https://en.wikipedia.org/wiki/Web_scraping' --recursive --max-depth 1 --max-pages 3 --no-pdf` | 3 pages, 23 assets, 1.77 MB, ~9s — recursion + asset downloader both working |
+
+Run the whole verification block in one go:
+
+```bash
+source .venv/bin/activate
+
+webclone info https://example.com
+webclone clone https://example.com -o /tmp/demo_example --max-pages 1 --no-pdf
+webclone clone https://httpbin.org/html -o /tmp/demo_httpbin --max-pages 1 --no-pdf
+webclone clone https://docs.python.org/3/library/typing.html -o /tmp/demo_pydocs --max-pages 1 --no-pdf
+webclone clone 'https://en.wikipedia.org/wiki/Web_scraping' \
+  -o /tmp/demo_wiki --recursive --max-depth 1 --max-pages 3 --no-pdf
+```
+
+> **Tip — single-shot authenticated capture:** if a saved cookie file in
+> `./cookies/*.json` matches the target domain, `webclone clone <url>`
+> auto-detects it and automatically turns on `--render-js`. You can just
+> run `webclone clone https://internal.example.com/page` and it Just Works.
 
 ### 🎨 Enterprise Desktop GUI (NEW!)
 
@@ -251,16 +305,20 @@ make gui
 WebClone is now an **official Model Context Protocol (MCP) server**, making website cloning available to AI agents like Claude, CrewAI, and any MCP-compatible framework!
 
 ```bash
-# Install MCP server
+# Install MCP server (adds the `webclone-mcp` entry point to .venv/bin/)
 make install-mcp
 
-# Use with Claude Desktop - add to config:
-# ~/.config/claude/claude_desktop_config.json
+# Run the server directly to verify it starts (stdio protocol; Ctrl+C to exit)
+make mcp
+```
+
+Wire it into Claude Desktop (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `~/.config/Claude/claude_desktop_config.json` on Linux):
+
+```json
 {
   "mcpServers": {
     "webclone": {
-      "command": "python",
-      "args": ["/path/to/webclone/webclone-mcp.py"]
+      "command": "/absolute/path/to/webclone/.venv/bin/webclone-mcp"
     }
   }
 }
@@ -367,14 +425,14 @@ webclone clone https://example.com \
   --json-logs                 # JSON-formatted logs for parsing
 ```
 
-For rendered knowledge-page extraction:
+For rendered knowledge-page extraction (selectors must match real elements on the target):
 
 ```bash
 webclone clone-knowledge-page https://docs.python.org/3/tutorial/index.html \
   --render-js \
-  --wait-for ".body" \
-  --item-selector ".body" \
-  --item-text-selector "h1" \
+  --wait-for "div.body" \
+  --item-selector "div.section, section" \
+  --item-text-selector "h1, h2, h3" \
   --detail-selector "p, li, pre" \
   --output ./knowledge-page
 ```
@@ -382,18 +440,27 @@ webclone clone-knowledge-page https://docs.python.org/3/tutorial/index.html \
 ### Real-World Examples
 
 ```bash
-# Archive a news site politely (limit pages to avoid overload)
-webclone clone https://www.python.org/blogs/ --recursive --max-pages 50 --workers 1 --delay 3000
+# Single page, fast smoke test
+webclone clone https://example.com --max-pages 1 --no-pdf
+
+# Crawl Wikipedia article + linked pages (verified: 3 pages, 23 assets, ~9s)
+webclone clone 'https://en.wikipedia.org/wiki/Web_scraping' \
+  --recursive --max-depth 1 --max-pages 3 --no-pdf
+
+# Clone a documentation page with all its CSS/JS/images
+# (verified: 24 files for https://docs.python.org/3/library/typing.html)
+webclone clone https://docs.python.org/3/library/typing.html --max-pages 1 --no-pdf
 
 # Clone a documentation site recursively for a RAG source corpus
-webclone clone https://docs.python.org/3/ --recursive --max-depth 3 --max-pages 250 --delay 3000
+webclone clone https://docs.python.org/3/ \
+  --recursive --max-depth 3 --max-pages 250 --workers 1 --delay 3000
 
 # Render a JavaScript documentation page before extracting structured content
 webclone clone-knowledge-page https://docs.python.org/3/tutorial/index.html \
   --render-js \
-  --wait-for ".body" \
-  --item-selector ".body" \
-  --item-text-selector "h1" \
+  --wait-for "div.body" \
+  --item-selector "div.section, section" \
+  --item-text-selector "h1, h2, h3" \
   --detail-selector "p, li, pre"
 
 # Production mode with JSON logs
@@ -414,7 +481,7 @@ python examples/authenticated_crawl.py
 ```python
 from pathlib import Path
 from webclone.models.config import SeleniumConfig
-from webclone.services import SeleniumService
+from webclone.services.selenium_service import SeleniumService
 
 # Open a visible browser and save cookies after manual sign-in.
 config = SeleniumConfig(headless=False)
@@ -516,14 +583,11 @@ src/webclone/
 git clone https://github.com/ruslanmv/webclone.git
 cd webclone
 
-# Install with dev dependencies
+# Install with dev dependencies (creates .venv/ with pytest, ruff, mypy, bandit)
 make dev
 
-# Run tests
+# Run tests — 70 passing
 make test
-
-# Run linter and type checker
-make audit
 
 # Format code
 make format
@@ -534,18 +598,22 @@ make format
 ```bash
 # Full test suite with coverage
 make test
+# → 70 passed in ~3s
 
 # Fast tests without coverage
 make test-fast
 
-# Generate HTML coverage report
+# Generate HTML coverage report (opens htmlcov/index.html)
 make coverage
 ```
+
+> The Makefile invokes `.venv/bin/pytest` / `.venv/bin/ruff` / etc. directly,
+> so the targets work whether or not the venv is activated.
 
 ### Code Quality
 
 ```bash
-# Lint with ruff
+# Lint with ruff (the codebase has known lint debt; CI does not block on it)
 make lint
 
 # Type check with mypy

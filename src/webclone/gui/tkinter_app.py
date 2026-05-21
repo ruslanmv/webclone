@@ -758,21 +758,38 @@ class WebCloneGUI:
     def _monitor_browser_url(self) -> None:
         """Monitor and update current browser URL."""
         logger.info("URL monitoring thread started")
-        
+
+        # Errors that mean the browser is mid-navigation. These are transient
+        # and benign for a polling loop — Chrome 148+/chromedriver raises
+        # "timeout / aborted by navigation: loader has changed while resolving
+        # nodes" whenever a command races a redirect (common in SSO flows).
+        transient_markers = (
+            "loader has changed",
+            "aborted by navigation",
+            "no such window",
+            "target window already closed",
+        )
+
         while not self.stop_url_monitor and self.selenium_service:
             try:
-                if self.selenium_service.driver:
-                    current_url = self.selenium_service.driver.current_url
+                driver = self.selenium_service.driver
+                if driver is not None:
+                    current_url = driver.current_url
                     if current_url != self.current_browser_url:
                         self.current_browser_url = current_url
                         logger.info(f"Browser navigated to: {current_url}")
                         # Update UI from main thread
                         self.root.after(0, lambda url=current_url: self.current_url_var.set(url))
             except Exception as e:
-                logger.error(f"Error monitoring URL: {e}")
-            
-            time.sleep(1)  # Check every second
-        
+                msg = str(e).lower()
+                if any(marker in msg for marker in transient_markers):
+                    # Browser is mid-navigation; just try again on the next tick.
+                    logger.debug(f"Transient URL poll error (ignored): {e!r}")
+                else:
+                    logger.error(f"Error monitoring URL: {e}")
+
+            time.sleep(2)  # Check every 2s to reduce race window during redirects
+
         logger.info("URL monitoring thread stopped")
 
     def _stop_url_monitoring(self) -> None:
@@ -1531,19 +1548,46 @@ Troubleshooting:
     def _sync_url_from_browser(self) -> None:
         """Sync URL from current browser session."""
         logger.info("Syncing URL from browser")
-        
-        if self.selenium_service and self.selenium_service.driver:
+
+        if not (self.selenium_service and self.selenium_service.driver):
+            messagebox.showwarning("Warning", "No active browser session")
+            return
+
+        # If we hit a "loader has changed" / navigation race, retry a few times.
+        # Prefer the URL the monitor thread already recorded as a fallback.
+        transient_markers = ("loader has changed", "aborted by navigation")
+        last_error: Optional[Exception] = None
+        current_url: Optional[str] = None
+
+        for attempt in range(5):
             try:
                 current_url = self.selenium_service.driver.current_url
-                self.crawl_url_var.set(current_url)
-                self.saved_session_url = current_url
-                logger.info(f"URL synced from browser: {current_url}")
-                messagebox.showinfo("Success", f"URL synced:\n{current_url}")
+                break
             except Exception as e:
-                logger.error(f"Error syncing URL: {e}")
-                messagebox.showerror("Error", f"Failed to sync URL:\n{str(e)}")
+                last_error = e
+                msg = str(e).lower()
+                if any(marker in msg for marker in transient_markers):
+                    logger.debug(f"Sync URL transient error (attempt {attempt + 1}): {e!r}")
+                    time.sleep(0.5)
+                    continue
+                break
+
+        if not current_url and self.current_browser_url:
+            logger.info("Falling back to last URL captured by monitor thread")
+            current_url = self.current_browser_url
+
+        if current_url:
+            self.crawl_url_var.set(current_url)
+            self.saved_session_url = current_url
+            logger.info(f"URL synced from browser: {current_url}")
+            messagebox.showinfo("Success", f"URL synced:\n{current_url}")
         else:
-            messagebox.showwarning("Warning", "No active browser session")
+            logger.error(f"Error syncing URL: {last_error}")
+            messagebox.showerror(
+                "Error",
+                "Failed to sync URL — the browser is busy navigating. "
+                "Wait a moment for the page to settle and try again.",
+            )
 
     # ======================================================================
     # RESULTS PAGE
